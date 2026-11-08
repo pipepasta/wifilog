@@ -14,6 +14,7 @@ pub const GAP_SECS: i64 = 15;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Metric {
     Rssi,
+    Noise,
     Snr,
     RouterMs,
     InternetMs,
@@ -118,6 +119,7 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
             Record::Lqm(l) => {
                 let v = &l.v;
                 push(Metric::Rssi, v.rssi as f64);
+                push(Metric::Noise, v.noise as f64);
                 push(Metric::Snr, v.snr as f64);
                 push(Metric::Cca, v.cca);
                 push(Metric::Tx, v.tx);

@@ -63,11 +63,10 @@ pub fn run_foreground(dir: &Path, internet: &str) -> Result<()> {
     }
 
     for ev in rx {
-        if let Some(rec) = stamper.handle(ev) {
-            if let Err(e) = appender.append(&rec) {
+        if let Some(rec) = stamper.handle(ev)
+            && let Err(e) = appender.append(&rec) {
                 log(format_args!("書き込みに失敗しました: {e:#}"));
             }
-        }
     }
     Ok(())
 }
@@ -107,11 +106,10 @@ fn lqm_session(tx: &Sender<Event>) -> Result<()> {
         let Ok(t) = DateTime::parse_from_str(&ev.timestamp, "%Y-%m-%d %H:%M:%S%.f%z") else {
             continue;
         };
-        if let Some(v) = lqm::parse(&ev.event_message) {
-            if tx.send(Event::Lqm { t, v }).is_err() {
+        if let Some(v) = lqm::parse(&ev.event_message)
+            && tx.send(Event::Lqm { t, v }).is_err() {
                 break;
             }
-        }
     }
     let _ = child.kill();
     let _ = child.wait();

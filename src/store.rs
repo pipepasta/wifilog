@@ -78,12 +78,11 @@ impl Appender {
         if let Err(e) = prune(&self.dir, date, KEEP_DAYS) {
             eprintln!("古い記録を消せませんでした: {e:#}");
         }
-        if is_new && !matches!(rec, Record::Net(_)) {
-            if let Some(n) = &self.last_net {
+        if is_new && !matches!(rec, Record::Net(_))
+            && let Some(n) = &self.last_net {
                 let header = Record::Net(NetRecord { t: rec.t(), ..n.clone() });
                 self.write(&header)?;
             }
-        }
         Ok(())
     }
 
@@ -329,7 +328,7 @@ mod tests {
         write!(f, "{head}").unwrap();
         assert_eq!(tail.poll().unwrap().len(), 0);
 
-        write!(f, "{rest}\n").unwrap();
+        writeln!(f, "{rest}").unwrap();
         assert_eq!(tail.poll().unwrap().len(), 1);
     }
 }

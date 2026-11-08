@@ -29,17 +29,32 @@ const STALE: Duration = Duration::seconds(30);
 /// 1 段の最低の高さ（枠の上下 2 行 ＋ グラフ 1 行）。
 const MIN_PANEL_HEIGHT: u16 = 3;
 
-const PANELS: [&[Metric]; 5] = [
-    &[Metric::Rssi, Metric::Snr],
-    &[Metric::RouterMs, Metric::InternetMs],
-    &[Metric::Cca],
-    &[Metric::Tx],
-    &[Metric::Retx, Metric::Fail],
+/// y 軸の目盛りの幅。全段で同じにして、グラフの左端（時刻の軸）をそろえる。
+const Y_LABEL_WIDTH: usize = 6;
+
+struct Panel {
+    /// グラフに描く指標（同じ単位のものだけ）
+    chart: &'static [Metric],
+    /// 見出しの右に数字で出す指標
+    values: &'static [Metric],
+}
+
+const PANELS: [Panel; 5] = [
+    // RSSI とノイズを描く。2 本の線の間隔が SNR になる
+    Panel { chart: &[Metric::Rssi, Metric::Noise], values: &[Metric::Rssi, Metric::Snr] },
+    Panel {
+        chart: &[Metric::RouterMs, Metric::InternetMs],
+        values: &[Metric::RouterMs, Metric::InternetMs],
+    },
+    Panel { chart: &[Metric::Cca], values: &[Metric::Cca] },
+    Panel { chart: &[Metric::Tx], values: &[Metric::Tx] },
+    Panel { chart: &[Metric::Retx, Metric::Fail], values: &[Metric::Retx, Metric::Fail] },
 ];
 
 fn name(m: Metric) -> &'static str {
     match m {
         Metric::Rssi => "RSSI",
+        Metric::Noise => "ノイズ",
         Metric::Snr => "SNR",
         Metric::RouterMs => "ルーター",
         Metric::InternetMs => "ネット",
@@ -52,7 +67,7 @@ fn name(m: Metric) -> &'static str {
 
 fn unit(m: Metric) -> &'static str {
     match m {
-        Metric::Rssi => " dBm",
+        Metric::Rssi | Metric::Noise => " dBm",
         Metric::Snr => " dB",
         Metric::RouterMs | Metric::InternetMs => " ms",
         Metric::Cca => "%",
@@ -71,6 +86,7 @@ fn fmt(m: Metric, v: f64) -> String {
 fn color(m: Metric) -> Color {
     match m {
         Metric::Rssi => Color::Cyan,
+        Metric::Noise => Color::Gray,
         Metric::Snr => Color::Green,
         Metric::RouterMs => Color::Yellow,
         Metric::InternetMs => Color::Magenta,
@@ -203,58 +219,70 @@ fn legend_text(model: &Model) -> String {
     parts.join("  ")
 }
 
-/// 見出しの右に出す数字。
-fn panel_value(model: &Model, mode: &Mode, metrics: &[Metric]) -> String {
+/// 見出しの右に出す数字の候補（長い順）。入りきるものを使う。
+fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
     if model.networks.len() >= 2 {
         let primary = metrics[0];
         let mut nets: Vec<_> = model.networks.iter().collect();
         nets.sort_by_key(|n| std::cmp::Reverse(n.secs));
-        let mut parts: Vec<String> = nets
-            .iter()
-            .take(3)
-            .filter_map(|n| {
-                let s = model.stats.get(&(primary, n.label))?;
-                Some(format!("{} {}{}", n.label, fmt(primary, s.avg), unit(primary).trim()))
-            })
-            .collect();
-        if nets.len() > 3 {
-            parts.push(format!("他 {}", nets.len() - 3));
-        }
-        return format!("{}（平均）", parts.join(" / "));
+        let per_net = |limit: usize| {
+            let mut parts: Vec<String> = nets
+                .iter()
+                .take(limit)
+                .filter_map(|n| {
+                    let s = model.stats.get(&(primary, n.label))?;
+                    Some(format!("{} {}{}", n.label, fmt(primary, s.avg), unit(primary).trim()))
+                })
+                .collect();
+            if nets.len() > limit {
+                parts.push(format!("他 {}", nets.len() - limit));
+            }
+            format!("{}（平均）", parts.join(" / "))
+        };
+        return vec![per_net(3), per_net(1)];
     }
 
     let label = model.current_label();
-    let mut text = match mode {
-        Mode::Live { .. } => metrics
-            .iter()
-            .filter_map(|&m| Some(format!("{} {}{}", name(m), fmt(m, *model.latest.get(&m)?), unit(m))))
-            .collect::<Vec<_>>()
-            .join(" / "),
-        Mode::Report { .. } => metrics
+    let join = |value: &dyn Fn(Metric) -> Option<f64>, named: bool| -> String {
+        metrics
             .iter()
             .filter_map(|&m| {
-                let s = model.stats.get(&(m, label?))?;
-                Some(format!(
-                    "{} 平均 {}{}（{}〜{}）",
-                    name(m),
-                    fmt(m, s.avg),
-                    unit(m),
-                    fmt(m, s.min),
-                    fmt(m, s.max)
-                ))
+                let v = fmt(m, value(m)?);
+                Some(if named { format!("{} {v}{}", name(m), unit(m)) } else { format!("{v}{}", unit(m)) })
             })
             .collect::<Vec<_>>()
-            .join("  "),
+            .join(" / ")
     };
-    if metrics.contains(&Metric::RouterMs) {
-        if let Some(label) = label {
+    let loss = match label {
+        Some(label) if metrics.contains(&Metric::RouterMs) => {
             let pct = |t: Target| {
                 model.loss.get(&(t, label)).map_or("-".to_string(), |l| format!("{:.0}%", l * 100.0))
             };
-            text.push_str(&format!(" ・ ロス {} / {}", pct(Target::Router), pct(Target::Internet)));
+            format!(" ・ ロス {} / {}", pct(Target::Router), pct(Target::Internet))
+        }
+        _ => String::new(),
+    };
+
+    match mode {
+        Mode::Live { .. } => {
+            let latest = |m: Metric| model.latest.get(&m).copied();
+            let named = join(&latest, true);
+            let plain = join(&latest, false);
+            vec![format!("{named}{loss}"), named, format!("{plain}{loss}"), plain]
+        }
+        Mode::Report { .. } => {
+            let stat = |m: Metric| label.and_then(|l| model.stats.get(&(m, l))).copied();
+            let avg = join(&|m| stat(m).map(|s| s.avg), false);
+            let min = join(&|m| stat(m).map(|s| s.min), false);
+            let max = join(&|m| stat(m).map(|s| s.max), false);
+            vec![
+                format!("平均 {avg} ・ 最小 {min} ・ 最大 {max}{loss}"),
+                format!("平均 {avg} ・ 最大 {max}{loss}"),
+                format!("平均 {avg}{loss}"),
+                format!("平均 {avg}"),
+            ]
         }
     }
-    text
 }
 
 fn y_bounds(model: &Model, metrics: &[Metric]) -> [f64; 2] {
@@ -289,7 +317,8 @@ fn draw_panel(
     index: usize,
     last: bool,
 ) {
-    let metrics = PANELS[index];
+    let panel = &PANELS[index];
+    let metrics = panel.chart;
     let [lo, hi] = y_bounds(model, metrics);
     let markers: Vec<[(f64, f64); 2]> =
         model.switches.iter().map(|&(x, _)| [(x, lo), (x, hi)]).collect();
@@ -317,7 +346,14 @@ fn draw_panel(
     }
 
     let title = Line::from(format!(" {} ", PANEL_TITLES[index]));
-    let value = Line::from(format!(" {} ", panel_value(model, mode, metrics))).right_aligned();
+    // 枠の角 2 つと、見出しとの間の余白 2 つ分を引いた幅に収まる候補を使う
+    let room = (area.width as usize).saturating_sub(title.width() + 4);
+    let value = panel_values(model, mode, panel.values)
+        .into_iter()
+        .map(|v| Line::from(format!(" {v} ")))
+        .find(|l| l.width() <= room)
+        .unwrap_or_default()
+        .right_aligned();
     let x_labels: Vec<String> = if last {
         vec![
             model.window.from.format("%H:%M").to_string(),
@@ -333,7 +369,7 @@ fn draw_panel(
         .y_axis(
             Axis::default()
                 .bounds([lo, hi])
-                .labels([fmt(y_metric, lo), fmt(y_metric, hi)]),
+                .labels([lo, hi].map(|v| format!("{:>w$}", fmt(y_metric, v), w = Y_LABEL_WIDTH))),
         );
     frame.render_widget(chart, area);
 }
@@ -381,6 +417,12 @@ mod tests {
                     net: Some(net.into()),
                     dst: Target::Router,
                     ms: Some(2.8),
+                }));
+                out.push(Record::Ping(PingRecord {
+                    t: at(s),
+                    net: Some(net.into()),
+                    dst: Target::Internet,
+                    ms: Some(10.5),
                 }));
             }
         }
@@ -463,5 +505,37 @@ mod tests {
         let lines = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 80, 12);
         row_of(&lines, "RSSI / SNR");
         assert!(!lines.iter().any(|l| l.contains("再送・失敗")));
+    }
+
+    /// 各段のグラフの左端（y 軸の線）の列が、全段でそろっている。
+    #[test]
+    fn chart_columns_are_aligned_across_panels() {
+        let lines = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 120, 40);
+        let axis_cols: Vec<usize> = PANEL_TITLES
+            .iter()
+            .map(|t| {
+                let row = &lines[row_of(&lines, t) + 1];
+                let chars: Vec<char> = row.chars().collect();
+                // 枠の左の線の次に出てくる縦線が y 軸
+                chars.iter().skip(1).position(|&c| c == '│').unwrap() + 1
+            })
+            .collect();
+        assert!(axis_cols.windows(2).all(|w| w[0] == w[1]), "axis columns: {axis_cols:?}");
+    }
+
+    /// 1 段目は dBm の値（RSSI とノイズ）だけを描くので、y 軸の範囲は負の値に収まる。
+    #[test]
+    fn first_panel_plots_only_dbm_values() {
+        let [lo, hi] = y_bounds(&model(&[(A, 0, 900)]), PANELS[0].chart);
+        assert!(hi < 0.0 && lo < -95.0, "bounds: {lo}..{hi}");
+    }
+
+    /// 数字が長くても、見出しは隠れない。
+    #[test]
+    fn long_values_do_not_hide_titles() {
+        let lines = render(&model(&[(A, 0, 900)]), &REPORT, at(900), 90, 40);
+        for t in PANEL_TITLES {
+            row_of(&lines, t);
+        }
     }
 }

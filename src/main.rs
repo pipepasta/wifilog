@@ -40,6 +40,39 @@ enum Cmd {
     Stop,
     /// 計測が動いているか、最後にいつ記録したかを表示する
     Status,
+    /// 推移をリアルタイムで見る（計測が止まっていれば始める。閉じても計測は続く）
+    View,
+    /// 過去の期間の推移を見る（指定がなければ過去1時間）
+    ShowReport(ReportArgs),
+}
+
+#[derive(clap::Args)]
+#[group(multiple = false)]
+struct ReportArgs {
+    /// 過去5分
+    #[arg(long = "5m")]
+    m5: bool,
+    /// 過去1時間
+    #[arg(long = "1h")]
+    h1: bool,
+    /// 過去24時間
+    #[arg(long = "24h")]
+    h24: bool,
+    /// 過去7日
+    #[arg(long = "7d")]
+    d7: bool,
+}
+
+fn report_span(a: &ReportArgs) -> (chrono::Duration, &'static str) {
+    if a.m5 {
+        (chrono::Duration::minutes(5), "過去5分")
+    } else if a.h24 {
+        (chrono::Duration::hours(24), "過去24時間")
+    } else if a.d7 {
+        (chrono::Duration::days(7), "過去7日")
+    } else {
+        (chrono::Duration::hours(1), "過去1時間")
+    }
 }
 
 const DEFAULT_INTERNET: &str = "1.1.1.1";
@@ -82,6 +115,14 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Status => print_status(&dir),
+        Cmd::View => {
+            let internet = internet_target(None, std::env::var("WIFILOG_INTERNET").ok());
+            tui::app::run_view(&dir, &internet)
+        }
+        Cmd::ShowReport(args) => {
+            let (span, label) = report_span(&args);
+            tui::app::run_report(&dir, span, label)
+        }
     }
 }
 
@@ -115,6 +156,32 @@ fn print_status(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn report_args(argv: &[&str]) -> Result<ReportArgs, clap::Error> {
+        let mut full = vec!["wifilog", "show-report"];
+        full.extend_from_slice(argv);
+        match Cli::try_parse_from(full)?.command {
+            Cmd::ShowReport(a) => Ok(a),
+            _ => panic!("show-report expected"),
+        }
+    }
+
+    #[test]
+    fn report_span_defaults_to_one_hour() {
+        assert_eq!(report_span(&report_args(&[]).unwrap()), (chrono::Duration::hours(1), "過去1時間"));
+    }
+
+    #[test]
+    fn report_span_flags() {
+        assert_eq!(report_span(&report_args(&["--5m"]).unwrap()), (chrono::Duration::minutes(5), "過去5分"));
+        assert_eq!(report_span(&report_args(&["--24h"]).unwrap()), (chrono::Duration::hours(24), "過去24時間"));
+        assert_eq!(report_span(&report_args(&["--7d"]).unwrap()), (chrono::Duration::days(7), "過去7日"));
+    }
+
+    #[test]
+    fn report_span_flags_are_exclusive() {
+        assert!(report_args(&["--5m", "--1h"]).is_err());
+    }
 
     #[test]
     fn internet_target_precedence() {
