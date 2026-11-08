@@ -22,6 +22,12 @@ mkdir -p ~/.local/bin && mv wifilog ~/.local/bin/   # any directory on your PATH
 wifilog --version
 ```
 
+Or with [mise](https://mise.jdx.dev/):
+
+```sh
+mise use -g github:pipepasta/wifilog
+```
+
 Or with the GitHub CLI:
 
 ```sh
