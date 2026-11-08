@@ -2,6 +2,10 @@
 
 A tool that runs in the background on your Mac, records Wi-Fi quality, and lets you watch how it changes in the terminal.
 
+
+<img width="750" height="450" alt="スクリーンショット 2026-11-08 16 12 01" src="https://github.com/user-attachments/assets/11823772-9e42-48bb-9784-0199f315c41e" />
+
+
 - Records Wi-Fi metrics (RSSI, noise, SNR, channel utilization, TX rate, retries / failures) about every 5 seconds
 - Records latency and packet loss to the router and to the internet (`1.1.1.1` by default) every 5 seconds
 - See it live with `wifilog view`, or look back at a past period with `wifilog show-report`, both drawn as the same charts
