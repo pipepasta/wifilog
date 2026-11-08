@@ -15,3 +15,4 @@ serde_json = "1.0.154"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+unicode-width = "0.2.3"

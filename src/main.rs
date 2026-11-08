@@ -6,6 +6,7 @@ mod ping;
 mod record;
 mod series;
 mod store;
+mod tui;
 
 use std::path::Path;
 
