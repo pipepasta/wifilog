@@ -82,7 +82,10 @@ mod tests {
 
     #[test]
     fn router_ip_from_ipconfig() {
-        assert_eq!(parse_router_ip("192.168.11.1\n"), Some("192.168.11.1".into()));
+        assert_eq!(
+            parse_router_ip("192.168.11.1\n"),
+            Some("192.168.11.1".into())
+        );
         assert_eq!(parse_router_ip(""), None); // Wi-Fi not connected
     }
 

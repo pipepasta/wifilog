@@ -116,7 +116,10 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
     let mut last_lqm = None;
     for (r, &label) in recs.iter().zip(&labels) {
         let mut push = |m: Metric, y: f64| {
-            points.entry(m).or_default().push(Point { t: r.t(), label, y });
+            points
+                .entry(m)
+                .or_default()
+                .push(Point { t: r.t(), label, y });
         };
         match r {
             Record::Lqm(l) => {
@@ -164,8 +167,16 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
                 .map(|seg| downsample(seg, metric, &window, width, buckets))
                 .collect(),
         );
-        for label in pts.iter().map(|p| p.label).collect::<std::collections::BTreeSet<_>>() {
-            let ys: Vec<f64> = pts.iter().filter(|p| p.label == label).map(|p| p.y).collect();
+        for label in pts
+            .iter()
+            .map(|p| p.label)
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let ys: Vec<f64> = pts
+                .iter()
+                .filter(|p| p.label == label)
+                .map(|p| p.y)
+                .collect();
             stats.insert((metric, label), summarize(&ys));
         }
         if let Some(p) = pts.iter().rev().find(|p| Some(p.label) == current) {
@@ -228,7 +239,11 @@ fn label_networks(
                 switches.push((window.x(r.t()), label));
             }
             if !networks.iter().any(|n| n.label == label) {
-                networks.push(Network { label, mac: net.clone(), secs: 0 });
+                networks.push(Network {
+                    label,
+                    mac: net.clone(),
+                    secs: 0,
+                });
             }
             cur = Some((net, label, r.t()));
         }
@@ -276,7 +291,11 @@ fn downsample(
             sum += seg[j].y;
             j += 1;
         }
-        let y = if metric.is_count() { sum } else { sum / (j - i) as f64 };
+        let y = if metric.is_count() {
+            sum
+        } else {
+            sum / (j - i) as f64
+        };
         out.push(((b as f64 + 0.5) * width, y));
         i = j;
     }
@@ -306,7 +325,10 @@ mod tests {
     }
 
     fn window(from: i64, to: i64) -> Window {
-        Window { from: at(from), to: at(to) }
+        Window {
+            from: at(from),
+            to: at(to),
+        }
     }
 
     fn lqm(secs: i64, net: Option<&str>, rssi: i32, retx: u32) -> Record {
@@ -330,7 +352,12 @@ mod tests {
     }
 
     fn ping(secs: i64, net: &str, dst: Target, ms: Option<f64>) -> Record {
-        Record::Ping(PingRecord { t: at(secs), net: Some(net.into()), dst, ms })
+        Record::Ping(PingRecord {
+            t: at(secs),
+            net: Some(net.into()),
+            dst,
+            ms,
+        })
     }
 
     fn every_5s(from: i64, to: i64, net: Option<&str>) -> Vec<Record> {
@@ -377,7 +404,10 @@ mod tests {
             lqm(35, Some(A), -60, 4),
         ];
         let m = build(&recs, window(0, 60), 2);
-        assert_eq!(m.lines[&Metric::Rssi], vec![vec![(15.0, -45.0), (45.0, -60.0)]]);
+        assert_eq!(
+            m.lines[&Metric::Rssi],
+            vec![vec![(15.0, -45.0), (45.0, -60.0)]]
+        );
         let retx: Vec<f64> = m.lines[&Metric::Retx][0].iter().map(|p| p.1).collect();
         assert_eq!(retx, vec![3.0, 4.0]);
     }

@@ -38,11 +38,17 @@ mod tests {
 
     #[test]
     fn timeout_line() {
-        assert_eq!(parse_line("Request timeout for icmp_seq 1"), PingLine::Timeout);
+        assert_eq!(
+            parse_line("Request timeout for icmp_seq 1"),
+            PingLine::Timeout
+        );
     }
 
     #[test]
     fn header_line_is_other() {
-        assert_eq!(parse_line("PING 1.1.1.1 (1.1.1.1): 56 data bytes"), PingLine::Other);
+        assert_eq!(
+            parse_line("PING 1.1.1.1 (1.1.1.1): 56 data bytes"),
+            PingLine::Other
+        );
     }
 }

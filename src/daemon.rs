@@ -24,7 +24,10 @@ pub struct Lock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
-    Running { pid: u32, since: Option<DateTime<FixedOffset>> },
+    Running {
+        pid: u32,
+        since: Option<DateTime<FixedOffset>>,
+    },
     Stopped,
 }
 
@@ -56,7 +59,12 @@ pub fn acquire(dir: &Path) -> Result<Option<Lock>> {
     }
     file.set_len(0)?;
     file.seek(SeekFrom::Start(0))?;
-    write!(file, "{} {}", std::process::id(), Local::now().fixed_offset().to_rfc3339())?;
+    write!(
+        file,
+        "{} {}",
+        std::process::id(),
+        Local::now().fixed_offset().to_rfc3339()
+    )?;
     file.flush()?;
     Ok(Some(Lock { _file: file }))
 }
@@ -75,7 +83,9 @@ pub fn status(dir: &Path) -> Result<Status> {
         .next()
         .and_then(|p| p.parse().ok())
         .context("cannot read the pid file contents")?;
-    let since = parts.next().and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    let since = parts
+        .next()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
     Ok(Status::Running { pid, since })
 }
 
@@ -117,7 +127,10 @@ pub fn start(dir: &Path, internet: &str) -> Result<StartOutcome> {
         matches!(status(dir), Ok(Status::Running { .. }))
     });
     if !started {
-        anyhow::bail!("the collector process did not start (check {})", log_path.display());
+        anyhow::bail!(
+            "the collector process did not start (check {})",
+            log_path.display()
+        );
     }
     Ok(StartOutcome::Started { pid: child.id() })
 }

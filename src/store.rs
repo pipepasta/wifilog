@@ -33,7 +33,10 @@ pub fn day_file(dir: &Path, date: NaiveDate) -> PathBuf {
 
 fn date_of_file(path: &Path) -> Option<NaiveDate> {
     let name = path.file_name()?.to_str()?;
-    name.strip_prefix(PREFIX)?.strip_suffix(SUFFIX)?.parse().ok()
+    name.strip_prefix(PREFIX)?
+        .strip_suffix(SUFFIX)?
+        .parse()
+        .ok()
 }
 
 /// Appends to daily files, switching to the next file when the date changes.
@@ -46,7 +49,12 @@ pub struct Appender {
 
 impl Appender {
     pub fn new(dir: PathBuf) -> Appender {
-        Appender { dir, date: None, file: None, last_net: None }
+        Appender {
+            dir,
+            date: None,
+            file: None,
+            last_net: None,
+        }
     }
 
     pub fn append(&mut self, rec: &Record) -> Result<()> {
@@ -78,11 +86,16 @@ impl Appender {
         if let Err(e) = prune(&self.dir, date, KEEP_DAYS) {
             eprintln!("could not delete old records: {e:#}");
         }
-        if is_new && !matches!(rec, Record::Net(_))
-            && let Some(n) = &self.last_net {
-                let header = Record::Net(NetRecord { t: rec.t(), ..n.clone() });
-                self.write(&header)?;
-            }
+        if is_new
+            && !matches!(rec, Record::Net(_))
+            && let Some(n) = &self.last_net
+        {
+            let header = Record::Net(NetRecord {
+                t: rec.t(),
+                ..n.clone()
+            });
+            self.write(&header)?;
+        }
         Ok(())
     }
 
@@ -147,8 +160,15 @@ pub struct Tail {
 impl Tail {
     pub fn new(dir: PathBuf) -> Tail {
         let date = Local::now().date_naive();
-        let pos = fs::metadata(day_file(&dir, date)).map(|m| m.len()).unwrap_or(0);
-        Tail { dir, date, pos, partial: String::new() }
+        let pos = fs::metadata(day_file(&dir, date))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        Tail {
+            dir,
+            date,
+            pos,
+            partial: String::new(),
+        }
     }
 
     /// Returns newline-terminated lines appended since the last call. A partial line carries over to the next call.
@@ -244,7 +264,9 @@ mod tests {
 
         let next = lines(&day_file(dir.path(), date("2026-11-09")));
         assert_eq!(next.len(), 2);
-        let Record::Net(head) = &next[0] else { panic!("first line should be net: {next:?}") };
+        let Record::Net(head) = &next[0] else {
+            panic!("first line should be net: {next:?}")
+        };
         assert_eq!(head.net.as_deref(), Some("aa:bb:cc:dd:ee:01"));
         assert_eq!(head.router_ip.as_deref(), Some("192.168.11.1"));
         assert_eq!(head.t, ts("2026-11-09T00:00:03+09:00"));
@@ -287,7 +309,10 @@ mod tests {
 
         assert_eq!(
             got,
-            vec![lqm("2026-11-08T23:50:00+09:00"), lqm("2026-11-09T00:10:00+09:00")]
+            vec![
+                lqm("2026-11-08T23:50:00+09:00"),
+                lqm("2026-11-09T00:10:00+09:00")
+            ]
         );
     }
 
@@ -318,7 +343,11 @@ mod tests {
         let today = Local::now().date_naive();
         let path = day_file(dir.path(), today);
         let line = serde_json::to_string(&lqm("2026-11-08T10:00:00+09:00")).unwrap();
-        let mut f = OpenOptions::new().create(true).append(true).open(&path).unwrap();
+        let mut f = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap();
         let mut tail = Tail::new(dir.path().to_path_buf());
 
         write!(f, "{line}\n{line}\n").unwrap();

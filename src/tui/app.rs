@@ -67,16 +67,24 @@ pub fn run_view(dir: &Path, internet: &str) -> Result<()> {
             let (minutes, span_label) = SPANS[span];
             let at = paused_at.unwrap_or_else(now);
             terminal.draw(|f| {
-                let window = Window { from: at - Duration::minutes(minutes), to: at };
+                let window = Window {
+                    from: at - Duration::minutes(minutes),
+                    to: at,
+                };
                 let model = series::build(&records, window, chart_buckets(f.area().width));
-                let mode = Mode::Live { paused: paused_at.is_some(), span_label };
+                let mode = Mode::Live {
+                    paused: paused_at.is_some(),
+                    span_label,
+                };
                 draw(f, &model, &mode, now());
             })?;
 
             if !event::poll(REFRESH)? {
                 continue;
             }
-            let Event::Key(key) = event::read()? else { continue };
+            let Event::Key(key) = event::read()? else {
+                continue;
+            };
             if key.kind != KeyEventKind::Press {
                 continue;
             }
@@ -100,7 +108,10 @@ pub fn run_view(dir: &Path, internet: &str) -> Result<()> {
 
 pub fn run_report(dir: &Path, span: Duration, label: &'static str) -> Result<()> {
     let to = now();
-    let window = Window { from: to - span, to };
+    let window = Window {
+        from: to - span,
+        to,
+    };
     let records = store::load_range(dir, window.from, window.to)?;
     if records.is_empty() {
         println!("No records in this period (start recording with `wifilog start`)");
@@ -115,9 +126,11 @@ pub fn run_report(dir: &Path, span: Duration, label: &'static str) -> Result<()>
             })?;
             // Redraw on every event (resize etc.) and exit on the quit key
             if let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press && is_quit(&key) {
-                    return Ok(());
-                }
+                && key.kind == KeyEventKind::Press
+                && is_quit(&key)
+            {
+                return Ok(());
+            }
         }
     })
 }

@@ -64,9 +64,10 @@ pub fn run_foreground(dir: &Path, internet: &str) -> Result<()> {
 
     for ev in rx {
         if let Some(rec) = stamper.handle(ev)
-            && let Err(e) = appender.append(&rec) {
-                log(format_args!("write failed: {e:#}"));
-            }
+            && let Err(e) = appender.append(&rec)
+        {
+            log(format_args!("write failed: {e:#}"));
+        }
     }
     Ok(())
 }
@@ -102,14 +103,17 @@ fn lqm_session(tx: &Sender<Event>) -> Result<()> {
     for line in BufReader::new(stdout).lines() {
         let line = line?;
         // Skip non-JSON lines such as the leading "Filtering the log data using ..."
-        let Ok(ev) = serde_json::from_str::<LogEvent>(&line) else { continue };
+        let Ok(ev) = serde_json::from_str::<LogEvent>(&line) else {
+            continue;
+        };
         let Ok(t) = DateTime::parse_from_str(&ev.timestamp, "%Y-%m-%d %H:%M:%S%.f%z") else {
             continue;
         };
         if let Some(v) = lqm::parse(&ev.event_message)
-            && tx.send(Event::Lqm { t, v }).is_err() {
-                break;
-            }
+            && tx.send(Event::Lqm { t, v }).is_err()
+        {
+            break;
+        }
     }
     let _ = child.kill();
     let _ = child.wait();
@@ -188,10 +192,20 @@ fn router_loop(tx: Sender<Event>) {
 /// What each thread sends to the main thread.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    Lqm { t: DateTime<FixedOffset>, v: LqmValues },
-    Ping { t: DateTime<FixedOffset>, dst: Target, ms: Option<f64> },
+    Lqm {
+        t: DateTime<FixedOffset>,
+        v: LqmValues,
+    },
+    Ping {
+        t: DateTime<FixedOffset>,
+        dst: Target,
+        ms: Option<f64>,
+    },
     /// The Wi-Fi router. `None` when Wi-Fi is not connected.
-    Router { t: DateTime<FixedOffset>, router: Option<Router> },
+    Router {
+        t: DateTime<FixedOffset>,
+        router: Option<Router>,
+    },
 }
 
 /// Remembers the current network and tags each record with it.
@@ -204,7 +218,10 @@ pub struct Stamper {
 
 impl Stamper {
     pub fn new() -> Stamper {
-        Stamper { router: None, changed: None }
+        Stamper {
+            router: None,
+            changed: None,
+        }
     }
 
     fn net(&self) -> Option<String> {
@@ -222,7 +239,9 @@ impl Stamper {
 
     /// Same IP with only the MAC missing (a transient arp failure) does not count as a change.
     fn is_same_network(&self, router: &Option<Router>) -> bool {
-        let Some(current) = &self.router else { return false };
+        let Some(current) = &self.router else {
+            return false;
+        };
         match (current, router) {
             (Some(cur), Some(new)) => cur.ip == new.ip && (new.mac.is_none() || cur.mac == new.mac),
             (None, None) => true,
@@ -232,10 +251,17 @@ impl Stamper {
 
     pub fn handle(&mut self, ev: Event) -> Option<Record> {
         match ev {
-            Event::Lqm { t, v } => Some(Record::Lqm(LqmRecord { t, net: self.net_at(t), v })),
-            Event::Ping { t, dst, ms } => {
-                Some(Record::Ping(PingRecord { t, net: self.net_at(t), dst, ms }))
-            }
+            Event::Lqm { t, v } => Some(Record::Lqm(LqmRecord {
+                t,
+                net: self.net_at(t),
+                v,
+            })),
+            Event::Ping { t, dst, ms } => Some(Record::Ping(PingRecord {
+                t,
+                net: self.net_at(t),
+                dst,
+                ms,
+            })),
             Event::Router { t, router } => {
                 if self.is_same_network(&router) {
                     return None;
@@ -245,7 +271,11 @@ impl Stamper {
                     self.changed = Some((t, self.net()));
                 }
                 self.router = Some(router);
-                Some(Record::Net(NetRecord { t, net: self.net(), router_ip }))
+                Some(Record::Net(NetRecord {
+                    t,
+                    net: self.net(),
+                    router_ip,
+                }))
             }
         }
     }
@@ -261,7 +291,10 @@ mod tests {
     }
 
     fn router(mac: &str) -> Option<Router> {
-        Some(Router { ip: "192.168.11.1".into(), mac: Some(mac.into()) })
+        Some(Router {
+            ip: "192.168.11.1".into(),
+            mac: Some(mac.into()),
+        })
     }
 
     fn values() -> LqmValues {
@@ -287,30 +320,44 @@ mod tests {
         let b = Some("bb:bb:bb:bb:bb:bb".to_string());
 
         assert_eq!(
-            s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") }),
+            s.handle(Event::Router {
+                t: ts(0),
+                router: router("aa:aa:aa:aa:aa:aa")
+            }),
             Some(Record::Net(NetRecord {
                 t: ts(0),
                 net: a.clone(),
                 router_ip: Some("192.168.11.1".into())
             }))
         );
-        let Some(Record::Lqm(l)) = s.handle(Event::Lqm { t: ts(5), v: values() }) else {
+        let Some(Record::Lqm(l)) = s.handle(Event::Lqm {
+            t: ts(5),
+            v: values(),
+        }) else {
             panic!("lqm expected")
         };
         assert_eq!(l.net, a);
         assert_eq!(
-            s.handle(Event::Router { t: ts(30), router: router("aa:aa:aa:aa:aa:aa") }),
+            s.handle(Event::Router {
+                t: ts(30),
+                router: router("aa:aa:aa:aa:aa:aa")
+            }),
             None
         );
 
-        let Some(Record::Net(n)) =
-            s.handle(Event::Router { t: ts(31), router: router("bb:bb:bb:bb:bb:bb") })
-        else {
+        let Some(Record::Net(n)) = s.handle(Event::Router {
+            t: ts(31),
+            router: router("bb:bb:bb:bb:bb:bb"),
+        }) else {
             panic!("net expected")
         };
         assert_eq!(n.net, b);
         assert_eq!(
-            s.handle(Event::Ping { t: ts(35), dst: Target::Router, ms: Some(2.8) }),
+            s.handle(Event::Ping {
+                t: ts(35),
+                dst: Target::Router,
+                ms: Some(2.8)
+            }),
             Some(Record::Ping(PingRecord {
                 t: ts(35),
                 net: b,
@@ -323,13 +370,26 @@ mod tests {
     #[test]
     fn wifi_off_becomes_unknown_network() {
         let mut s = Stamper::new();
-        s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") });
+        s.handle(Event::Router {
+            t: ts(0),
+            router: router("aa:aa:aa:aa:aa:aa"),
+        });
 
         assert_eq!(
-            s.handle(Event::Router { t: ts(30), router: None }),
-            Some(Record::Net(NetRecord { t: ts(30), net: None, router_ip: None }))
+            s.handle(Event::Router {
+                t: ts(30),
+                router: None
+            }),
+            Some(Record::Net(NetRecord {
+                t: ts(30),
+                net: None,
+                router_ip: None
+            }))
         );
-        let Some(Record::Lqm(l)) = s.handle(Event::Lqm { t: ts(35), v: values() }) else {
+        let Some(Record::Lqm(l)) = s.handle(Event::Lqm {
+            t: ts(35),
+            v: values(),
+        }) else {
             panic!("lqm expected")
         };
         assert_eq!(l.net, None);
@@ -339,13 +399,25 @@ mod tests {
     fn late_lqm_keeps_previous_network() {
         // Log timestamps predate arrival at the main thread, so an old LQM arriving right after a switch belongs to the previous network
         let mut s = Stamper::new();
-        s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") });
-        s.handle(Event::Router { t: ts(30), router: router("bb:bb:bb:bb:bb:bb") });
-        let Some(Record::Lqm(old)) = s.handle(Event::Lqm { t: ts(28), v: values() }) else {
+        s.handle(Event::Router {
+            t: ts(0),
+            router: router("aa:aa:aa:aa:aa:aa"),
+        });
+        s.handle(Event::Router {
+            t: ts(30),
+            router: router("bb:bb:bb:bb:bb:bb"),
+        });
+        let Some(Record::Lqm(old)) = s.handle(Event::Lqm {
+            t: ts(28),
+            v: values(),
+        }) else {
             panic!("lqm expected")
         };
         assert_eq!(old.net.as_deref(), Some("aa:aa:aa:aa:aa:aa"));
-        let Some(Record::Lqm(new)) = s.handle(Event::Lqm { t: ts(33), v: values() }) else {
+        let Some(Record::Lqm(new)) = s.handle(Event::Lqm {
+            t: ts(33),
+            v: values(),
+        }) else {
             panic!("lqm expected")
         };
         assert_eq!(new.net.as_deref(), Some("bb:bb:bb:bb:bb:bb"));
@@ -354,10 +426,25 @@ mod tests {
     #[test]
     fn arp_failure_with_same_ip_keeps_network() {
         let mut s = Stamper::new();
-        s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") });
-        let no_mac = Some(Router { ip: "192.168.11.1".into(), mac: None });
-        assert_eq!(s.handle(Event::Router { t: ts(30), router: no_mac }), None);
-        let Some(Record::Lqm(l)) = s.handle(Event::Lqm { t: ts(35), v: values() }) else {
+        s.handle(Event::Router {
+            t: ts(0),
+            router: router("aa:aa:aa:aa:aa:aa"),
+        });
+        let no_mac = Some(Router {
+            ip: "192.168.11.1".into(),
+            mac: None,
+        });
+        assert_eq!(
+            s.handle(Event::Router {
+                t: ts(30),
+                router: no_mac
+            }),
+            None
+        );
+        let Some(Record::Lqm(l)) = s.handle(Event::Lqm {
+            t: ts(35),
+            v: values(),
+        }) else {
             panic!("lqm expected")
         };
         assert_eq!(l.net.as_deref(), Some("aa:aa:aa:aa:aa:aa"));

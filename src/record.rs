@@ -102,13 +102,18 @@ mod tests {
     fn lqm_record_json_shape() {
         let json = r#"{"t":"2026-11-08T14:23:08.883+09:00","k":"lqm","net":"aa:bb:cc:dd:ee:12","rssi":-41,"noise":-95,"snr":34,"cca":18.0,"tx":866.7,"rx":866.7,"txf":29,"fail":0,"retx":0,"ch":36,"bw":80}"#;
         let r: Record = serde_json::from_str(json).unwrap();
-        let Record::Lqm(l) = &r else { panic!("expected lqm") };
+        let Record::Lqm(l) = &r else {
+            panic!("expected lqm")
+        };
         assert_eq!(l.v.rssi, -41);
         assert_eq!(l.v.bw, Some(80));
         assert_eq!(r.net(), Some("aa:bb:cc:dd:ee:12"));
         // Round-trips to the same value (key order doesn't matter)
         let back: serde_json::Value = serde_json::to_value(&r).unwrap();
-        assert_eq!(back, serde_json::from_str::<serde_json::Value>(json).unwrap());
+        assert_eq!(
+            back,
+            serde_json::from_str::<serde_json::Value>(json).unwrap()
+        );
     }
 
     #[test]
@@ -117,7 +122,11 @@ mod tests {
         let r: Record = serde_json::from_str(json).unwrap();
         assert!(matches!(
             r,
-            Record::Ping(PingRecord { dst: Target::Internet, ms: None, .. })
+            Record::Ping(PingRecord {
+                dst: Target::Internet,
+                ms: None,
+                ..
+            })
         ));
     }
 

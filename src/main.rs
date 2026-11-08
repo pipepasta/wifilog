@@ -97,7 +97,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let dir = store::data_dir()?;
     match cli.command {
-        Cmd::Start { foreground, internet } => {
+        Cmd::Start {
+            foreground,
+            internet,
+        } => {
             let internet = internet_target(internet, std::env::var("WIFILOG_INTERNET").ok());
             if foreground {
                 let Some(_lock) = daemon::acquire(&dir)? else {
@@ -129,7 +132,12 @@ fn main() -> Result<()> {
             tui::app::run_report(&dir, span, label)
         }
         Cmd::Completions { shell } => {
-            clap_complete::generate(shell, &mut Cli::command(), "wifilog", &mut std::io::stdout());
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "wifilog",
+                &mut std::io::stdout(),
+            );
             Ok(())
         }
     }
@@ -138,7 +146,9 @@ fn main() -> Result<()> {
 fn print_status(dir: &Path) -> Result<()> {
     match daemon::status(dir)? {
         Status::Running { pid, since } => {
-            let since = since.map_or("unknown".to_string(), |s| s.format("%m/%d %H:%M").to_string());
+            let since = since.map_or("unknown".to_string(), |s| {
+                s.format("%m/%d %H:%M").to_string()
+            });
             println!("Recording (pid {pid}, since {since})");
         }
         Status::Stopped => println!("Stopped"),
@@ -177,14 +187,26 @@ mod tests {
 
     #[test]
     fn report_span_defaults_to_one_hour() {
-        assert_eq!(report_span(&report_args(&[]).unwrap()), (chrono::Duration::hours(1), "past 1 hour"));
+        assert_eq!(
+            report_span(&report_args(&[]).unwrap()),
+            (chrono::Duration::hours(1), "past 1 hour")
+        );
     }
 
     #[test]
     fn report_span_flags() {
-        assert_eq!(report_span(&report_args(&["--5m"]).unwrap()), (chrono::Duration::minutes(5), "past 5 min"));
-        assert_eq!(report_span(&report_args(&["--24h"]).unwrap()), (chrono::Duration::hours(24), "past 24 hours"));
-        assert_eq!(report_span(&report_args(&["--7d"]).unwrap()), (chrono::Duration::days(7), "past 7 days"));
+        assert_eq!(
+            report_span(&report_args(&["--5m"]).unwrap()),
+            (chrono::Duration::minutes(5), "past 5 min")
+        );
+        assert_eq!(
+            report_span(&report_args(&["--24h"]).unwrap()),
+            (chrono::Duration::hours(24), "past 24 hours")
+        );
+        assert_eq!(
+            report_span(&report_args(&["--7d"]).unwrap()),
+            (chrono::Duration::days(7), "past 7 days")
+        );
     }
 
     #[test]
@@ -194,7 +216,10 @@ mod tests {
 
     #[test]
     fn internet_target_precedence() {
-        assert_eq!(internet_target(Some("8.8.8.8".into()), Some("9.9.9.9".into())), "8.8.8.8");
+        assert_eq!(
+            internet_target(Some("8.8.8.8".into()), Some("9.9.9.9".into())),
+            "8.8.8.8"
+        );
         assert_eq!(internet_target(None, Some("9.9.9.9".into())), "9.9.9.9");
         assert_eq!(internet_target(None, None), "1.1.1.1");
     }

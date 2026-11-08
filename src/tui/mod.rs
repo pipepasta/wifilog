@@ -16,13 +16,23 @@ use crate::series::{Metric, Model};
 pub mod app;
 
 pub enum Mode {
-    Live { paused: bool, span_label: &'static str },
-    Report { span_label: &'static str },
+    Live {
+        paused: bool,
+        span_label: &'static str,
+    },
+    Report {
+        span_label: &'static str,
+    },
 }
 
 /// Titles of the 5 panels (top to bottom).
-pub const PANEL_TITLES: [&str; 5] =
-    ["RSSI / SNR", "Latency (router / internet)", "Channel utilization", "TX rate", "Retries / failures"];
+pub const PANEL_TITLES: [&str; 5] = [
+    "RSSI / SNR",
+    "Latency (router / internet)",
+    "Channel utilization",
+    "TX rate",
+    "Retries / failures",
+];
 
 /// How long without records before recording is considered stopped.
 const STALE: Duration = Duration::seconds(30);
@@ -41,14 +51,26 @@ struct Panel {
 
 const PANELS: [Panel; 5] = [
     // Plot RSSI and noise; the gap between the two lines is the SNR
-    Panel { chart: &[Metric::Rssi, Metric::Noise], values: &[Metric::Rssi, Metric::Snr] },
+    Panel {
+        chart: &[Metric::Rssi, Metric::Noise],
+        values: &[Metric::Rssi, Metric::Snr],
+    },
     Panel {
         chart: &[Metric::RouterMs, Metric::InternetMs],
         values: &[Metric::RouterMs, Metric::InternetMs],
     },
-    Panel { chart: &[Metric::Cca], values: &[Metric::Cca] },
-    Panel { chart: &[Metric::Tx], values: &[Metric::Tx] },
-    Panel { chart: &[Metric::Retx, Metric::Fail], values: &[Metric::Retx, Metric::Fail] },
+    Panel {
+        chart: &[Metric::Cca],
+        values: &[Metric::Cca],
+    },
+    Panel {
+        chart: &[Metric::Tx],
+        values: &[Metric::Tx],
+    },
+    Panel {
+        chart: &[Metric::Retx, Metric::Fail],
+        values: &[Metric::Retx, Metric::Fail],
+    },
 ];
 
 fn name(m: Metric) -> &'static str {
@@ -99,7 +121,9 @@ fn color(m: Metric) -> Color {
 
 /// `aa:bb:cc:dd:ee:12` → `aa:bb:…:12`
 fn short_mac(mac: Option<&str>) -> String {
-    let Some(mac) = mac else { return "unknown".into() };
+    let Some(mac) = mac else {
+        return "unknown".into();
+    };
     let p: Vec<&str> = mac.split(':').collect();
     if p.len() != 6 {
         return mac.to_string();
@@ -109,7 +133,11 @@ fn short_mac(mac: Option<&str>) -> String {
 
 fn fmt_secs(secs: i64) -> String {
     let (h, m) = (secs / 3600, secs % 3600 / 60);
-    if h > 0 { format!("{h}h{m:02}m") } else { format!("{m}m") }
+    if h > 0 {
+        format!("{h}h{m:02}m")
+    } else {
+        format!("{m}m")
+    }
 }
 
 /// Horizontal dot count of a chart (a braille marker is 2 dots wide per cell), minus the y-axis labels and border.
@@ -180,11 +208,20 @@ fn draw_header(
             if *paused {
                 ("⏸ paused".to_string(), Color::Yellow)
             } else if stale(model.last_record) {
-                ("⚠ collector stopped (check `wifilog status`)".to_string(), Color::Yellow)
+                (
+                    "⚠ collector stopped (check `wifilog status`)".to_string(),
+                    Color::Yellow,
+                )
             } else if radio_missing {
-                ("⚠ no radio data (check wifilog.log)".to_string(), Color::Yellow)
+                (
+                    "⚠ no radio data (check wifilog.log)".to_string(),
+                    Color::Yellow,
+                )
             } else {
-                (format!("● recording {}", now.format("%H:%M:%S")), Color::Green)
+                (
+                    format!("● recording {}", now.format("%H:%M:%S")),
+                    Color::Green,
+                )
             }
         }
         Mode::Report { .. } => (
@@ -198,21 +235,34 @@ fn draw_header(
     };
     frame.render_widget(Paragraph::new(left), area);
     frame.render_widget(
-        Paragraph::new(right).style(Style::default().fg(color)).alignment(Alignment::Right),
+        Paragraph::new(right)
+            .style(Style::default().fg(color))
+            .alignment(Alignment::Right),
         area,
     );
 }
 
 /// Windows of 24 hours or more repeat times of day, so include the date.
 fn time_format(model: &Model) -> &'static str {
-    if model.window.secs() >= 24.0 * 3600.0 { "%m/%d %H:%M" } else { "%H:%M" }
+    if model.window.secs() >= 24.0 * 3600.0 {
+        "%m/%d %H:%M"
+    } else {
+        "%H:%M"
+    }
 }
 
 fn legend_text(model: &Model) -> String {
     let mut parts: Vec<String> = model
         .networks
         .iter()
-        .map(|n| format!("{} {} ({})", n.label, short_mac(n.mac.as_deref()), fmt_secs(n.secs)))
+        .map(|n| {
+            format!(
+                "{} {} ({})",
+                n.label,
+                short_mac(n.mac.as_deref()),
+                fmt_secs(n.secs)
+            )
+        })
         .collect();
     if !model.switches.is_empty() {
         let switches: Vec<String> = model
@@ -231,7 +281,10 @@ fn legend_text(model: &Model) -> String {
 /// Router / internet loss rates for network `label`.
 fn loss_text(model: &Model, label: char) -> String {
     let pct = |t: Target| {
-        model.loss.get(&(t, label)).map_or("-".to_string(), |l| format!("{:.0}%", l * 100.0))
+        model
+            .loss
+            .get(&(t, label))
+            .map_or("-".to_string(), |l| format!("{:.0}%", l * 100.0))
     };
     format!("{} / {}", pct(Target::Router), pct(Target::Internet))
 }
@@ -257,7 +310,12 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
                     } else {
                         String::new()
                     };
-                    Some(format!("{} {}{}{loss}", n.label, fmt(primary, s.avg), unit(primary).trim()))
+                    Some(format!(
+                        "{} {}{}{loss}",
+                        n.label,
+                        fmt(primary, s.avg),
+                        unit(primary).trim()
+                    ))
                 })
                 .collect();
             if nets.len() > limit {
@@ -265,7 +323,12 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
             }
             format!("avg {}", parts.join(" / "))
         };
-        return vec![per_net(3, true), per_net(2, true), per_net(1, true), per_net(1, false)];
+        return vec![
+            per_net(3, true),
+            per_net(2, true),
+            per_net(1, true),
+            per_net(1, false),
+        ];
     }
 
     let join = |value: &dyn Fn(Metric) -> Option<f64>, named: bool| -> String {
@@ -273,7 +336,11 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
             .iter()
             .filter_map(|&m| {
                 let v = fmt(m, value(m)?);
-                Some(if named { format!("{} {v}{}", name(m), unit(m)) } else { format!("{v}{}", unit(m)) })
+                Some(if named {
+                    format!("{} {v}{}", name(m), unit(m))
+                } else {
+                    format!("{v}{}", unit(m))
+                })
             })
             .collect::<Vec<_>>()
             .join(" / ")
@@ -289,7 +356,12 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
             let latest = |m: Metric| model.latest.get(&m).copied();
             let named = join(&latest, true);
             let plain = join(&latest, false);
-            vec![format!("{named}{loss}"), format!("{plain}{loss}"), named, plain]
+            vec![
+                format!("{named}{loss}"),
+                format!("{plain}{loss}"),
+                named,
+                plain,
+            ]
         }
         Mode::Report { .. } => {
             let stat = |m: Metric| label.and_then(|l| model.stats.get(&(m, l))).copied();
@@ -319,7 +391,10 @@ fn y_bounds(model: &Model, metrics: &[Metric]) -> [f64; 2] {
     if !lo.is_finite() {
         return [0.0, 1.0];
     }
-    if metrics.iter().all(|m| matches!(m, Metric::Retx | Metric::Fail)) {
+    if metrics
+        .iter()
+        .all(|m| matches!(m, Metric::Retx | Metric::Fail))
+    {
         lo = 0.0;
     }
     let pad = if hi > lo { (hi - lo) * 0.1 } else { 1.0 };
@@ -330,19 +405,15 @@ fn y_bounds(model: &Model, metrics: &[Metric]) -> [f64; 2] {
     [lo, hi]
 }
 
-fn draw_panel(
-    frame: &mut Frame,
-    area: Rect,
-    model: &Model,
-    mode: &Mode,
-    index: usize,
-    last: bool,
-) {
+fn draw_panel(frame: &mut Frame, area: Rect, model: &Model, mode: &Mode, index: usize, last: bool) {
     let panel = &PANELS[index];
     let metrics = panel.chart;
     let [lo, hi] = y_bounds(model, metrics);
-    let markers: Vec<[(f64, f64); 2]> =
-        model.switches.iter().map(|&(x, _)| [(x, lo), (x, hi)]).collect();
+    let markers: Vec<[(f64, f64); 2]> = model
+        .switches
+        .iter()
+        .map(|&(x, _)| [(x, lo), (x, hi)])
+        .collect();
 
     let mut datasets: Vec<Dataset> = markers
         .iter()
@@ -370,7 +441,10 @@ fn draw_panel(
     let mut spans = vec![Span::raw(format!(" {} ", PANEL_TITLES[index]))];
     for (i, &m) in metrics.iter().enumerate() {
         let sep = if i == 0 { "" } else { " " };
-        spans.push(Span::styled(format!("{sep}━{}", name(m)), Style::default().fg(color(m))));
+        spans.push(Span::styled(
+            format!("{sep}━{}", name(m)),
+            Style::default().fg(color(m)),
+        ));
     }
     spans.push(Span::raw(" "));
     let title = Line::from(spans);
@@ -393,7 +467,11 @@ fn draw_panel(
     let y_metric = metrics[0];
     let chart = Chart::new(datasets)
         .block(Block::bordered().title(title).title(value))
-        .x_axis(Axis::default().bounds([0.0, model.window.secs()]).labels(x_labels))
+        .x_axis(
+            Axis::default()
+                .bounds([0.0, model.window.secs()])
+                .labels(x_labels),
+        )
         .y_axis(
             Axis::default()
                 .bounds([lo, hi])
@@ -458,7 +536,14 @@ mod tests {
     }
 
     fn model(nets: &[(&str, i64, i64)]) -> Model {
-        build(&records(nets), Window { from: at(0), to: at(900) }, 200)
+        build(
+            &records(nets),
+            Window {
+                from: at(0),
+                to: at(900),
+            },
+            200,
+        )
     }
 
     /// Renders the screen as one string per row (skipping the second cell of wide characters).
@@ -487,8 +572,13 @@ mod tests {
             .unwrap_or_else(|| panic!("{text:?} not found in:\n{}", lines.join("\n")))
     }
 
-    const LIVE: Mode = Mode::Live { paused: false, span_label: "last 15 min" };
-    const REPORT: Mode = Mode::Report { span_label: "past 15 min" };
+    const LIVE: Mode = Mode::Live {
+        paused: false,
+        span_label: "last 15 min",
+    };
+    const REPORT: Mode = Mode::Report {
+        span_label: "past 15 min",
+    };
 
     #[test]
     fn panels_are_stacked_in_order() {
@@ -497,7 +587,13 @@ mod tests {
         assert!(rows.windows(2).all(|w| w[0] < w[1]), "rows: {rows:?}");
         assert_eq!(
             PANEL_TITLES,
-            ["RSSI / SNR", "Latency (router / internet)", "Channel utilization", "TX rate", "Retries / failures"]
+            [
+                "RSSI / SNR",
+                "Latency (router / internet)",
+                "Channel utilization",
+                "TX rate",
+                "Retries / failures"
+            ]
         );
     }
 
@@ -523,7 +619,13 @@ mod tests {
         let one = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 120, 40);
         assert!(!one[1].contains("A aa:aa:…:aa"), "{}", one[1]);
 
-        let two = render(&model(&[(A, 0, 450), (B, 450, 900)]), &LIVE, at(900), 120, 40);
+        let two = render(
+            &model(&[(A, 0, 450), (B, 450, 900)]),
+            &LIVE,
+            at(900),
+            120,
+            40,
+        );
         assert!(two[1].contains("A aa:aa:…:aa"), "{}", two[1]);
         assert!(two[1].contains("B bb:bb:…:bb"), "{}", two[1]);
     }
@@ -548,7 +650,10 @@ mod tests {
                 chars.iter().skip(1).position(|&c| c == '│').unwrap() + 1
             })
             .collect();
-        assert!(axis_cols.windows(2).all(|w| w[0] == w[1]), "axis columns: {axis_cols:?}");
+        assert!(
+            axis_cols.windows(2).all(|w| w[0] == w[1]),
+            "axis columns: {axis_cols:?}"
+        );
     }
 
     /// The first panel plots only dBm values (RSSI and noise), so its y range stays negative.
@@ -571,7 +676,10 @@ mod tests {
     fn paused_never_shows_stale_warning() {
         let m = model(&[(A, 0, 900)]);
         let late = m.last_record.unwrap() + chrono::Duration::seconds(120);
-        let paused = Mode::Live { paused: true, span_label: "last 15 min" };
+        let paused = Mode::Live {
+            paused: true,
+            span_label: "last 15 min",
+        };
         let lines = render(&m, &paused, late, 120, 40);
         assert!(lines[0].contains("paused"), "{}", lines[0]);
         assert!(!lines[0].contains("collector stopped"), "{}", lines[0]);
@@ -579,7 +687,13 @@ mod tests {
 
     #[test]
     fn live_with_two_networks_shows_current_values_and_loss() {
-        let lines = render(&model(&[(A, 0, 450), (B, 450, 900)]), &LIVE, at(900), 140, 40);
+        let lines = render(
+            &model(&[(A, 0, 450), (B, 450, 900)]),
+            &LIVE,
+            at(900),
+            140,
+            40,
+        );
         let row = &lines[row_of(&lines, "Latency (router / internet)")];
         assert!(row.contains("Internet 10.5 ms"), "{row}");
         assert!(row.contains("loss"), "{row}");
@@ -587,7 +701,13 @@ mod tests {
 
     #[test]
     fn report_with_two_networks_shows_loss() {
-        let lines = render(&model(&[(A, 0, 450), (B, 450, 900)]), &REPORT, at(900), 140, 40);
+        let lines = render(
+            &model(&[(A, 0, 450), (B, 450, 900)]),
+            &REPORT,
+            at(900),
+            140,
+            40,
+        );
         let row = &lines[row_of(&lines, "Latency (router / internet)")];
         assert!(row.contains("A 2.8"), "{row}");
         assert!(row.contains("loss"), "{row}");
@@ -613,17 +733,30 @@ mod tests {
                 ms: Some(2.8),
             }));
         }
-        let m = build(&recs, Window { from: at(0), to: at(900) }, 200);
+        let m = build(
+            &recs,
+            Window {
+                from: at(0),
+                to: at(900),
+            },
+            200,
+        );
         let lines = render(&m, &LIVE, at(900), 120, 40);
         assert!(lines[0].contains("no radio data"), "{}", lines[0]);
     }
 
     #[test]
     fn long_windows_label_axis_with_dates() {
-        let window = Window { from: at(900) - chrono::Duration::hours(24), to: at(900) };
+        let window = Window {
+            from: at(900) - chrono::Duration::hours(24),
+            to: at(900),
+        };
         let m = build(&records(&[(A, 0, 900)]), window, 200);
         let lines = render(&m, &REPORT, at(900), 120, 40);
         let bottom = lines[lines.len() - 3..].join("\n");
-        assert!(bottom.contains("11/07 10:15") && bottom.contains("11/08 10:15"), "{bottom}");
+        assert!(
+            bottom.contains("11/07 10:15") && bottom.contains("11/08 10:15"),
+            "{bottom}"
+        );
     }
 }

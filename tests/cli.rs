@@ -26,7 +26,11 @@ fn prints_zsh_completion_script() {
         .args(["completions", "zsh"])
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let script = String::from_utf8(out.stdout).unwrap();
     assert!(script.starts_with("#compdef wifilog"), "{script}");
     for word in ["show-report", "--24h", "status"] {
