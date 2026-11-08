@@ -37,3 +37,16 @@ fn prints_zsh_completion_script() {
         assert!(script.contains(word), "missing {word}");
     }
 }
+
+/// `wifilog status` names the radio values "Wi-Fi" when nothing has been recorded yet.
+#[test]
+fn status_reports_wifi_and_ping_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_wifilog"))
+        .arg("status")
+        .env("WIFILOG_DIR", dir.path())
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("Wi-Fi none / ping none"), "{text}");
+}

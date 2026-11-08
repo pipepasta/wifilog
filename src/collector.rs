@@ -36,7 +36,7 @@ fn log(msg: impl std::fmt::Display) {
 /// Keeps collecting. Never returns (child processes are restarted when they exit).
 pub fn run_foreground(dir: &Path, internet: &str) -> Result<()> {
     log(format_args!(
-        "Started collecting (data: {}, internet target: {internet})",
+        "Started recording (data: {}, internet target: {internet})",
         dir.display()
     ));
     let (tx, rx) = mpsc::channel();

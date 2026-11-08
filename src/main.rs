@@ -164,7 +164,7 @@ fn print_status(dir: &Path) -> Result<()> {
             .map_or("none".to_string(), |r| r.t().format("%H:%M:%S").to_string())
     };
     println!(
-        "Last records (past 10 min): radio {} / ping {}",
+        "Last records (past 10 min): Wi-Fi {} / ping {}",
         last(|r| matches!(r, Record::Lqm(_))),
         last(|r| matches!(r, Record::Ping(_))),
     );

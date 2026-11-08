@@ -161,7 +161,7 @@ pub fn draw(frame: &mut Frame, model: &Model, mode: &Mode, now: DateTime<FixedOf
         frame.render_widget(Paragraph::new(legend_text(model)), legend_area);
     }
     let footer_text = match mode {
-        Mode::Live { .. } => "q quit   ←/→ span   space pause",
+        Mode::Live { .. } => "q quit   ←/→ range   space pause",
         Mode::Report { .. } => "q quit",
     };
     frame.render_widget(
@@ -209,12 +209,12 @@ fn draw_header(
                 ("⏸ paused".to_string(), Color::Yellow)
             } else if stale(model.last_record) {
                 (
-                    "⚠ collector stopped (check `wifilog status`)".to_string(),
+                    "⚠ not recording (check `wifilog status`)".to_string(),
                     Color::Yellow,
                 )
             } else if radio_missing {
                 (
-                    "⚠ no radio data (check wifilog.log)".to_string(),
+                    "⚠ no Wi-Fi metrics (check wifilog.log)".to_string(),
                     Color::Yellow,
                 )
             } else {
@@ -609,7 +609,7 @@ mod tests {
         let m = model(&[(A, 0, 900)]);
         let last = m.last_record.unwrap();
         let lines = render(&m, &LIVE, last + chrono::Duration::seconds(60), 120, 40);
-        assert!(lines[0].contains("collector stopped"), "{}", lines[0]);
+        assert!(lines[0].contains("not recording"), "{}", lines[0]);
         let fresh = render(&m, &LIVE, last + chrono::Duration::seconds(3), 120, 40);
         assert!(fresh[0].contains("● recording"), "{}", fresh[0]);
     }
@@ -682,7 +682,7 @@ mod tests {
         };
         let lines = render(&m, &paused, late, 120, 40);
         assert!(lines[0].contains("paused"), "{}", lines[0]);
-        assert!(!lines[0].contains("collector stopped"), "{}", lines[0]);
+        assert!(!lines[0].contains("not recording"), "{}", lines[0]);
     }
 
     #[test]
@@ -742,7 +742,7 @@ mod tests {
             200,
         );
         let lines = render(&m, &LIVE, at(900), 120, 40);
-        assert!(lines[0].contains("no radio data"), "{}", lines[0]);
+        assert!(lines[0].contains("no Wi-Fi metrics"), "{}", lines[0]);
     }
 
     #[test]
@@ -758,5 +758,12 @@ mod tests {
             bottom.contains("11/07 10:15") && bottom.contains("11/08 10:15"),
             "{bottom}"
         );
+    }
+
+    #[test]
+    fn live_footer_names_the_range_keys() {
+        let lines = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 120, 40);
+        let footer = lines.last().unwrap();
+        assert!(footer.contains("←/→ range"), "{footer}");
     }
 }

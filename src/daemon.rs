@@ -121,14 +121,14 @@ pub fn start(dir: &Path, internet: &str) -> Result<StartOutcome> {
         .stdout(log.try_clone()?)
         .stderr(log)
         .spawn()
-        .context("cannot start the collector process")?;
+        .context("cannot start the recording process")?;
 
     let started = wait_until(Duration::from_secs(2), || {
         matches!(status(dir), Ok(Status::Running { .. }))
     });
     if !started {
         anyhow::bail!(
-            "the collector process did not start (check {})",
+            "the recording process did not start (check {})",
             log_path.display()
         );
     }
@@ -151,7 +151,7 @@ pub fn stop(dir: &Path) -> Result<bool> {
         matches!(status(dir), Ok(Status::Stopped))
     });
     if !stopped {
-        anyhow::bail!("the collector process (pid {pid}) did not stop");
+        anyhow::bail!("the recording process (pid {pid}) did not stop");
     }
     Ok(true)
 }

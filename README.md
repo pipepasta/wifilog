@@ -2,7 +2,7 @@
 
 A tool that runs in the background on your Mac, records Wi-Fi quality, and lets you watch how it changes in the terminal.
 
-- Records radio values (RSSI, noise, SNR, channel utilization, TX rate, retries / failures) about every 5 seconds
+- Records Wi-Fi metrics (RSSI, noise, SNR, channel utilization, TX rate, retries / failures) about every 5 seconds
 - Records latency and packet loss to the router and to the internet (`1.1.1.1` by default) every 5 seconds
 - See it live with `wifilog view`, or look back at a past period with `wifilog show-report`, both drawn as the same charts
 - No sudo or Location Services permission needed. Records stay on your Mac and are never sent anywhere
@@ -47,7 +47,7 @@ Five charts are stacked vertically. They all share the same time axis, so you ca
 
 If the network (router) changes during the period, each network gets a label (A, B, …), and a vertical line is drawn through every chart at the moment of the switch. The numbers in the titles are shown separately for each network.
 
-Keys (`view`): `q` quit, `←` / `→` time span (5 min, 15 min, 1 hour), `space` pause
+Keys (`view`): `q` quit, `←` / `→` time range (5 min, 15 min, 1 hour), `space` pause
 
 ## Data
 
@@ -63,7 +63,7 @@ Keys (`view`): `q` quit, `←` / `→` time span (5 min, 15 min, 1 hour), `space
 
 **The SSID and BSSID are not available.** macOS returns them redacted (`<redacted>`) to programs without Location Services permission. Networks are told apart by the **router's MAC address** instead.
 
-Radio values are read from airportd's LQM messages streamed by `log stream`. This log format is undocumented, so a macOS update may break it. If `wifilog status` shows the radio record time is no longer updating, suspect this first.
+Wi-Fi metrics are read from airportd's LQM messages streamed by `log stream`. This log format is undocumented, so a macOS update may break it. If the `Wi-Fi` time in `wifilog status` stops updating (or `view` shows "no Wi-Fi metrics"), suspect this first.
 
 ## Start automatically at login (launchd)
 
