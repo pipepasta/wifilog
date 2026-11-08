@@ -1,7 +1,7 @@
-//! 計測プロセスの起動・停止・状態確認。
+//! Starting, stopping, and checking the status of the collector process.
 //!
-//! 「動いているか」は pid ファイルの有無ではなく、そのファイルへの排他ロックで判断する。
-//! プロセスが落ちればロックは OS が外すので、古い pid ファイルが残っても次の起動を妨げない。
+//! Whether it is running is decided by an exclusive lock on the pid file, not by whether the file exists.
+//! The OS releases the lock when the process dies, so a leftover pid file never blocks the next start.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -17,7 +17,7 @@ use chrono::{DateTime, FixedOffset, Local};
 pub const PID_FILE: &str = "wifilog.pid";
 pub const LOG_FILE: &str = "wifilog.log";
 
-/// 持っている間ロックが続く。
+/// The lock is held for as long as this is alive.
 pub struct Lock {
     _file: File,
 }
@@ -35,7 +35,7 @@ pub enum StartOutcome {
 }
 
 fn open_pid_file(dir: &Path) -> Result<File> {
-    std::fs::create_dir_all(dir).with_context(|| format!("{} を作れません", dir.display()))?;
+    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     let path = dir.join(PID_FILE);
     OpenOptions::new()
         .read(true)
@@ -43,16 +43,16 @@ fn open_pid_file(dir: &Path) -> Result<File> {
         .create(true)
         .truncate(false)
         .open(&path)
-        .with_context(|| format!("{} を開けません", path.display()))
+        .with_context(|| format!("cannot open {}", path.display()))
 }
 
-/// ロックを取って pid と開始時刻を書く。すでに誰かが持っていれば `None`。
+/// Takes the lock and writes the pid and start time. `None` if someone else already holds it.
 pub fn acquire(dir: &Path) -> Result<Option<Lock>> {
     let mut file = open_pid_file(dir)?;
     match file.try_lock() {
         Ok(()) => {}
         Err(TryLockError::WouldBlock) => return Ok(None),
-        Err(TryLockError::Error(e)) => return Err(e).context("pid ファイルをロックできません"),
+        Err(TryLockError::Error(e)) => return Err(e).context("cannot lock the pid file"),
     }
     file.set_len(0)?;
     file.seek(SeekFrom::Start(0))?;
@@ -64,9 +64,9 @@ pub fn acquire(dir: &Path) -> Result<Option<Lock>> {
 pub fn status(dir: &Path) -> Result<Status> {
     let mut file = open_pid_file(dir)?;
     match file.try_lock() {
-        Ok(()) => return Ok(Status::Stopped), // ロックは file を閉じると外れる
+        Ok(()) => return Ok(Status::Stopped), // the lock is released when file is closed
         Err(TryLockError::WouldBlock) => {}
-        Err(TryLockError::Error(e)) => return Err(e).context("pid ファイルを確認できません"),
+        Err(TryLockError::Error(e)) => return Err(e).context("cannot check the pid file"),
     }
     let mut text = String::new();
     file.read_to_string(&mut text)?;
@@ -74,7 +74,7 @@ pub fn status(dir: &Path) -> Result<Status> {
     let pid = parts
         .next()
         .and_then(|p| p.parse().ok())
-        .context("pid ファイルの中身が読めません")?;
+        .context("cannot read the pid file contents")?;
     let since = parts.next().and_then(|s| DateTime::parse_from_rfc3339(s).ok());
     Ok(Status::Running { pid, since })
 }
@@ -90,7 +90,7 @@ fn wait_until(timeout: Duration, mut ok: impl FnMut() -> bool) -> bool {
     ok()
 }
 
-/// 計測プロセスを裏で起動する。
+/// Starts the collector process in the background.
 pub fn start(dir: &Path, internet: &str) -> Result<StartOutcome> {
     if let Status::Running { pid, .. } = status(dir)? {
         return Ok(StartOutcome::AlreadyRunning { pid });
@@ -100,45 +100,45 @@ pub fn start(dir: &Path, internet: &str) -> Result<StartOutcome> {
         .create(true)
         .append(true)
         .open(&log_path)
-        .with_context(|| format!("{} を開けません", log_path.display()))?;
-    let exe = std::env::current_exe().context("実行ファイルの場所が分かりません")?;
+        .with_context(|| format!("cannot open {}", log_path.display()))?;
+    let exe = std::env::current_exe().context("cannot locate the executable")?;
     let child = Command::new(exe)
         .args(["start", "--foreground", "--internet", internet])
         .env("WIFILOG_DIR", dir)
-        // 新しいプロセスグループに入れる。端末を閉じても巻き込まれず、stop でグループごと止められる
+        // Put it in a new process group: closing the terminal won't take it down, and stop can kill the whole group
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log)
         .spawn()
-        .context("計測プロセスを起動できません")?;
+        .context("cannot start the collector process")?;
 
     let started = wait_until(Duration::from_secs(2), || {
         matches!(status(dir), Ok(Status::Running { .. }))
     });
     if !started {
-        anyhow::bail!("計測プロセスが起動しませんでした（{} を確認してください）", log_path.display());
+        anyhow::bail!("the collector process did not start (check {})", log_path.display());
     }
     Ok(StartOutcome::Started { pid: child.id() })
 }
 
-/// 計測プロセスをプロセスグループごと止める。止めたら `true`、もともと止まっていたら `false`。
+/// Stops the collector's whole process group. `true` if it was stopped, `false` if it was not running.
 pub fn stop(dir: &Path) -> Result<bool> {
     let Status::Running { pid, .. } = status(dir)? else {
         return Ok(false);
     };
     let pid = pid as libc::pid_t;
-    // SAFETY: kill はシグナルを送るだけで、メモリには触れない
+    // SAFETY: kill only sends a signal and touches no memory
     let sent_to_group = unsafe { libc::kill(-pid, libc::SIGTERM) } == 0;
     if !sent_to_group {
-        // launchd などから --foreground で動かしていて、自分がグループの長でない場合
+        // Running with --foreground (e.g. under launchd) and not the process group leader
         unsafe { libc::kill(pid, libc::SIGTERM) };
     }
     let stopped = wait_until(Duration::from_secs(5), || {
         matches!(status(dir), Ok(Status::Stopped))
     });
     if !stopped {
-        anyhow::bail!("計測プロセス（pid {pid}）が止まりませんでした");
+        anyhow::bail!("the collector process (pid {pid}) did not stop");
     }
     Ok(true)
 }

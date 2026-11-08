@@ -1,63 +1,63 @@
 # wifilog
 
-Mac の Wi-Fi の品質を常駐して記録し、ターミナルで推移を見るためのツールです。
+A tool that runs in the background on your Mac, records Wi-Fi quality, and lets you watch how it changes in the terminal.
 
-- 電波の値（RSSI、ノイズ、SNR、チャンネルの混雑度、送信速度、再送・失敗）を約 5 秒ごとに記録します
-- ルーターとインターネット（既定は `1.1.1.1`）までの遅延とパケットロスを 5 秒ごとに記録します
-- `wifilog view` でリアルタイムに、`wifilog show-report` で過去の期間を、同じ見た目のグラフで確認できます
-- sudo も位置情報の許可も要りません。記録は Mac の中だけに保存し、外部には送りません
+- Records radio values (RSSI, noise, SNR, channel utilization, TX rate, retries / failures) about every 5 seconds
+- Records latency and packet loss to the router and to the internet (`1.1.1.1` by default) every 5 seconds
+- See it live with `wifilog view`, or look back at a past period with `wifilog show-report`, both drawn as the same charts
+- No sudo or Location Services permission needed. Records stay on your Mac and are never sent anywhere
 
-macOS 専用です（macOS 26.5、MacBook Pro M4 で動作確認）。
+macOS only (tested on macOS 26.5, MacBook Pro M4).
 
-## インストール
+## Install
 
 ```sh
 cargo install --path .
 ```
 
-## 使い方
+## Usage
 
 ```sh
-wifilog start                 # 計測を裏で始める
-wifilog view                  # リアルタイムで見る（止まっていれば計測も始める。閉じても計測は続く）
-wifilog show-report --1h      # 過去の期間を見る（--5m / --1h / --24h / --7d。省略時は --1h）
-wifilog status                # 動いているか、最後にいつ記録したか
-wifilog stop                  # 計測を止める
+wifilog start                 # start recording in the background
+wifilog view                  # watch live (starts recording if stopped; recording continues after you close it)
+wifilog show-report --1h      # view a past period (--5m / --1h / --24h / --7d; --1h if omitted)
+wifilog status                # whether it's running and when it last recorded
+wifilog stop                  # stop recording
 ```
 
-### 画面
+### Screen
 
-グラフを縦に 5 段並べます。全段で時刻の軸がそろっているので、同じ瞬間の変化を縦に見比べられます。
+Five charts are stacked vertically. They all share the same time axis, so you can compare what happened at the same moment by reading straight down.
 
-1. **RSSI / SNR**: RSSI とノイズの 2 本の線（2 本の間隔が SNR）
-2. **遅延**: ルーターとインターネットまでの往復時間。見出しにパケットロス率
-3. **チャンネル混雑度**
-4. **送信速度**
-5. **再送・失敗**
+1. **RSSI / SNR**: two lines, RSSI and noise (the gap between them is the SNR)
+2. **Latency**: round-trip time to the router and to the internet, with the packet loss rate in the title
+3. **Channel utilization**
+4. **TX rate**
+5. **Retries / failures**
 
-期間の途中でネットワーク（ルーター）が変わったときは、ネットワークごとに A, B, … と記号を振り、切り替わった時刻にグラフ全体を貫く縦線を引きます。見出しの数字はネットワークごとに分けて出します。
+If the network (router) changes during the period, each network gets a label (A, B, …), and a vertical line is drawn through every chart at the moment of the switch. The numbers in the titles are shown separately for each network.
 
-キー操作（`view`）: `q` 終了、`←` / `→` 時間幅（5 分・15 分・1 時間）、`space` 一時停止
+Keys (`view`): `q` quit, `←` / `→` time span (5 min, 15 min, 1 hour), `space` pause
 
-## データ
+## Data
 
-- 場所: `~/Library/Application Support/wifilog/`
-  - `samples-YYYY-MM-DD.jsonl`: 記録（1 行 1 件の JSON）。30 日より古いものは自動で消します
-  - `wifilog.log`: 計測プロセスのログ
-  - `wifilog.pid`: 計測プロセスの pid
-- 環境変数
-  - `WIFILOG_DIR`: データの場所を変える
-  - `WIFILOG_INTERNET`: インターネット側の ping の宛先を変える（`wifilog start --internet <HOST>` でも指定でき、そちらが優先）
+- Location: `~/Library/Application Support/wifilog/`
+  - `samples-YYYY-MM-DD.jsonl`: the records (one JSON object per line). Files older than 30 days are deleted automatically
+  - `wifilog.log`: the collector process's log
+  - `wifilog.pid`: the collector process's pid
+- Environment variables
+  - `WIFILOG_DIR`: change the data location
+  - `WIFILOG_INTERNET`: change the internet ping target (can also be set with `wifilog start --internet <HOST>`, which takes precedence)
 
-## 取れない情報
+## What it can't capture
 
-接続先の **SSID・BSSID は取れません**。macOS が位置情報の許可を持たないプログラムには伏せ字（`<redacted>`）で返すためです。代わりに **ルーターの MAC アドレス** でネットワークを区別しています。
+**The SSID and BSSID are not available.** macOS returns them redacted (`<redacted>`) to programs without Location Services permission. Networks are told apart by the **router's MAC address** instead.
 
-電波の値は、`log stream` で流れてくる airportd の LQM のログから読んでいます。このログの書式は公開されていないので、macOS の更新で読めなくなる可能性があります。`wifilog status` で電波の記録時刻が更新されていなければ、これを疑ってください。
+Radio values are read from airportd's LQM messages streamed by `log stream`. This log format is undocumented, so a macOS update may break it. If `wifilog status` shows the radio record time is no longer updating, suspect this first.
 
-## ログイン時に自動で起動する（launchd）
+## Start automatically at login (launchd)
 
-`~/Library/LaunchAgents/dev.pipepasta.wifilog.plist` を作ります（`wifilog` のパスと `USER` は自分の環境に合わせてください）。
+Create `~/Library/LaunchAgents/dev.pipepasta.wifilog.plist` (adjust the `wifilog` path and `USER` to your environment).
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -83,8 +83,8 @@ wifilog stop                  # 計測を止める
 ```
 
 ```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pipepasta.wifilog.plist   # 登録して起動
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.pipepasta.wifilog.plist     # 解除
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pipepasta.wifilog.plist   # register and start
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.pipepasta.wifilog.plist     # unregister
 ```
 
-launchd で動かしている間に `wifilog stop` すると、`KeepAlive` によりすぐに起動し直されます。止めたいときは `launchctl bootout` を使ってください。
+If you run `wifilog stop` while it runs under launchd, `KeepAlive` restarts it immediately. Use `launchctl bootout` to stop it.

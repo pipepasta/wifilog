@@ -1,8 +1,8 @@
-//! 実行ファイルを外から動かして確かめるテスト。
+//! Tests that run the binary from the outside.
 
 use std::process::{Command, Stdio};
 
-/// `wifilog status | head -1` のように、読み手が先にパイプを閉じてもパニックしない。
+/// Does not panic when the reader closes the pipe first, as in `wifilog status | head -1`.
 #[test]
 fn closed_stdout_does_not_panic() {
     let dir = tempfile::tempdir().unwrap();
@@ -13,7 +13,7 @@ fn closed_stdout_does_not_panic() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    drop(child.stdout.take()); // 読み手が何も読まずに閉じる
+    drop(child.stdout.take()); // the reader closes without reading anything
     let out = child.wait_with_output().unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("panicked"), "panicked: {stderr}");

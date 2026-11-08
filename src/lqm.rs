@@ -1,4 +1,4 @@
-//! airportd が約 5 秒ごとに出す LQM (Link Quality Metric) のログメッセージを解析する。
+//! Parses the LQM (Link Quality Metric) log messages airportd emits about every 5 seconds.
 //!
 //! `[corewifi] LQM: rssi=-40dBm … noise=-95dBm snr=35 cca=11.0% … txRate=866.7Mbps txFrames=29
 //!  txFail=0 txRetrans=0 … rxRate=866.7Mbps … channel = 36 BW = 80 band = 2`
@@ -8,7 +8,7 @@ use std::str::FromStr;
 
 use crate::record::LqmValues;
 
-/// LQM の行なら値を返す。そうでなければ `None`。
+/// Returns the values if this is an LQM line, otherwise `None`.
 pub fn parse(message: &str) -> Option<LqmValues> {
     let body = message.split_once("LQM: ")?.1;
     let f = fields(body);
@@ -27,7 +27,7 @@ pub fn parse(message: &str) -> Option<LqmValues> {
     })
 }
 
-/// `key=value` と `key = value`（channel や BW）の両方の書き方を集める。
+/// Collects both the `key=value` and `key = value` (channel, BW) forms.
 fn fields(body: &str) -> HashMap<&str, &str> {
     let tokens: Vec<&str> = body.split_whitespace().collect();
     let mut map = HashMap::new();
@@ -46,7 +46,7 @@ fn fields(body: &str) -> HashMap<&str, &str> {
     map
 }
 
-/// 単位（dBm、%、Mbps）を外して数値として読む。
+/// Strips the unit (dBm, %, Mbps) and parses the number.
 fn num<T: FromStr>(f: &HashMap<&str, &str>, key: &str) -> Option<T> {
     let raw = f.get(key)?;
     let end = raw
@@ -59,7 +59,7 @@ fn num<T: FromStr>(f: &HashMap<&str, &str>, key: &str) -> Option<T> {
 mod tests {
     use super::*;
 
-    // macOS 26.5 の MacBook Pro (M4) で実際に出ていた行
+    // A real line from a MacBook Pro (M4) on macOS 26.5
     const REAL: &str = "[corewifi] LQM: rssi=-40dBm per_ant_rssi=(-39dBm, -40dBm) noise=-95dBm snr=35 cca=11.0% ccaSelfTotal=0 ccaOtherTotal=5 interferenceTotal=5 txRate=866.7Mbps txFrames=29 txFail=0 txRetrans=0 txFallbackRate=520.0Mbps rxRate=866.7Mbps rxFrames=34 rxRetryFrames=0 rxToss=0 beaconRecv=49 beaconSched=49 txFwFrames=21 txFwFail=0 txFwRetrans=0 network = <redacted> bssid = <redacted> channel = 36 BW = 80 band = 2";
 
     #[test]

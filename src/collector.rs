@@ -1,7 +1,7 @@
-//! 計測プロセス本体（`wifilog start --foreground`）。
+//! The collector process itself (`wifilog start --foreground`).
 //!
-//! データ源ごとにスレッドを立て、`Event` をチャネルでメインスレッドに送る。
-//! メインスレッドは `Stamper` で今のネットワークを付けてから `Appender` で書く。
+//! Spawns a thread per data source, each sending `Event`s to the main thread over a channel.
+//! The main thread tags them with the current network via `Stamper`, then writes them with `Appender`.
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -19,7 +19,7 @@ use crate::ping::{self, PingLine};
 use crate::record::{LqmRecord, LqmValues, NetRecord, PingRecord, Record, Target};
 use crate::{lqm, store};
 
-/// airportd の LQM の行だけに絞る。
+/// Narrows the stream down to airportd's LQM lines.
 const LQM_PREDICATE: &str = r#"process == "airportd" AND eventMessage CONTAINS "LQM: rssi=""#;
 const PING_INTERVAL_SECS: &str = "5";
 const ROUTER_CHECK: Duration = Duration::from_secs(30);
@@ -33,23 +33,23 @@ fn log(msg: impl std::fmt::Display) {
     eprintln!("{} {msg}", now().format("%Y-%m-%d %H:%M:%S"));
 }
 
-/// 計測を続ける。戻らない（子プロセスが終われば起動し直す）。
+/// Keeps collecting. Never returns (child processes are restarted when they exit).
 pub fn run_foreground(dir: &Path, internet: &str) -> Result<()> {
     log(format_args!(
-        "計測を開始しました（データ: {}、インターネット側: {internet}）",
+        "Started collecting (data: {}, internet target: {internet})",
         dir.display()
     ));
     let (tx, rx) = mpsc::channel();
     let mut stamper = Stamper::new();
     let mut appender = store::Appender::new(dir.to_path_buf());
 
-    // 最初のルーター確認を待ってから他のデータ源を動かす。
-    // そうしないと、ネットワークが分かる前の記録（net: null）が先頭に入ってしまう。
+    // Wait for the first router check before starting the other sources.
+    // Otherwise records from before the network is known (net: null) would end up at the top.
     {
         let tx = tx.clone();
         thread::spawn(move || router_loop(tx));
     }
-    let first = rx.recv().context("ルーターの確認ができませんでした")?;
+    let first = rx.recv().context("could not check the router")?;
     if let Some(rec) = stamper.handle(first) {
         appender.append(&rec)?;
     }
@@ -65,16 +65,16 @@ pub fn run_foreground(dir: &Path, internet: &str) -> Result<()> {
     for ev in rx {
         if let Some(rec) = stamper.handle(ev)
             && let Err(e) = appender.append(&rec) {
-                log(format_args!("書き込みに失敗しました: {e:#}"));
+                log(format_args!("write failed: {e:#}"));
             }
     }
     Ok(())
 }
 
-/// `log stream --style ndjson` の 1 行のうち、使う項目だけ。
+/// The fields we use from one `log stream --style ndjson` line.
 #[derive(Deserialize)]
 struct LogEvent {
-    /// 例: "2026-11-08 14:23:08.883962+0900"
+    /// e.g. "2026-11-08 14:23:08.883962+0900"
     timestamp: String,
     #[serde(rename = "eventMessage")]
     event_message: String,
@@ -83,9 +83,9 @@ struct LogEvent {
 fn lqm_loop(tx: Sender<Event>) {
     loop {
         if let Err(e) = lqm_session(&tx) {
-            log(format_args!("log stream でエラー: {e:#}"));
+            log(format_args!("log stream error: {e:#}"));
         }
-        log("log stream が終了しました。5 秒後に起動し直します");
+        log("log stream exited; restarting in 5 seconds");
         thread::sleep(RESTART_DELAY);
     }
 }
@@ -97,11 +97,11 @@ fn lqm_session(tx: &Sender<Event>) -> Result<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .context("log stream を起動できません")?;
+        .context("cannot start log stream")?;
     let stdout = child.stdout.take().expect("stdout is piped");
     for line in BufReader::new(stdout).lines() {
         let line = line?;
-        // 先頭の "Filtering the log data using ..." など、JSON でない行は飛ばす
+        // Skip non-JSON lines such as the leading "Filtering the log data using ..."
         let Ok(ev) = serde_json::from_str::<LogEvent>(&line) else { continue };
         let Ok(t) = DateTime::parse_from_str(&ev.timestamp, "%Y-%m-%d %H:%M:%S%.f%z") else {
             continue;
@@ -116,7 +116,7 @@ fn lqm_session(tx: &Sender<Event>) -> Result<()> {
     Ok(())
 }
 
-/// `ping -i 5 <host>` を起動し、出力を読むスレッドを立てる。止めるときは返した `Child` を kill する。
+/// Starts `ping -i 5 <host>` and a thread that reads its output. Kill the returned `Child` to stop it.
 fn start_ping(host: &str, dst: Target, tx: Sender<Event>) -> Result<Child> {
     let mut child = Command::new("ping")
         .args(["-i", PING_INTERVAL_SECS, host])
@@ -124,7 +124,7 @@ fn start_ping(host: &str, dst: Target, tx: Sender<Event>) -> Result<Child> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .with_context(|| format!("ping {host} を起動できません"))?;
+        .with_context(|| format!("cannot start ping {host}"))?;
     let stdout = child.stdout.take().expect("stdout is piped");
     thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(|l| l.ok()) {
@@ -146,7 +146,7 @@ fn internet_ping_loop(host: String, tx: Sender<Event>) {
         match start_ping(&host, Target::Internet, tx.clone()) {
             Ok(mut child) => {
                 let _ = child.wait();
-                log(format_args!("ping {host} が終了しました。5 秒後に起動し直します"));
+                log(format_args!("ping {host} exited; restarting in 5 seconds"));
             }
             Err(e) => log(format_args!("{e:#}")),
         }
@@ -154,7 +154,7 @@ fn internet_ping_loop(host: String, tx: Sender<Event>) {
     }
 }
 
-/// 30 秒ごとに Wi-Fi 側のルーターを確かめ、変わったらルーター向けの ping を起動し直す。
+/// Checks the Wi-Fi router every 30 seconds and restarts the router ping when it changes.
 fn router_loop(tx: Sender<Event>) {
     let mut ping: Option<(String, Child)> = None;
     loop {
@@ -185,20 +185,20 @@ fn router_loop(tx: Sender<Event>) {
     }
 }
 
-/// 各スレッドからメインスレッドへ送るもの。
+/// What each thread sends to the main thread.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Lqm { t: DateTime<FixedOffset>, v: LqmValues },
     Ping { t: DateTime<FixedOffset>, dst: Target, ms: Option<f64> },
-    /// Wi-Fi 側のルーター。Wi-Fi に繋がっていなければ `None`。
+    /// The Wi-Fi router. `None` when Wi-Fi is not connected.
     Router { t: DateTime<FixedOffset>, router: Option<Router> },
 }
 
-/// 今のネットワークを覚えておき、各レコードに付ける。
+/// Remembers the current network and tags each record with it.
 pub struct Stamper {
-    /// まだ一度もルーターを確認していなければ `None`。
+    /// `None` until the router has been checked once.
     router: Option<Option<Router>>,
-    /// 最後にネットワークが変わった時刻と、その前のネットワーク
+    /// When the network last changed, and the network before that
     changed: Option<(DateTime<FixedOffset>, Option<String>)>,
 }
 
@@ -211,8 +211,8 @@ impl Stamper {
         self.router.as_ref()?.as_ref()?.mac.clone()
     }
 
-    /// 時刻 `t` の記録が属するネットワーク。LQM はログの時刻なので、届くのがルーターの確認より
-    /// 遅れることがある。切り替えより前の時刻なら前のネットワークとして扱う。
+    /// The network a record at time `t` belongs to. LQM carries the log's timestamp, so it can arrive
+    /// after the router check. Times before the switch count as the previous network.
     fn net_at(&self, t: DateTime<FixedOffset>) -> Option<String> {
         match &self.changed {
             Some((at, prev)) if t < *at => prev.clone(),
@@ -220,7 +220,7 @@ impl Stamper {
         }
     }
 
-    /// IP は同じで MAC だけ取れなかった（arp の一時的な失敗）なら、変化とみなさない。
+    /// Same IP with only the MAC missing (a transient arp failure) does not count as a change.
     fn is_same_network(&self, router: &Option<Router>) -> bool {
         let Some(current) = &self.router else { return false };
         match (current, router) {
@@ -337,7 +337,7 @@ mod tests {
 
     #[test]
     fn late_lqm_keeps_previous_network() {
-        // log の時刻はメインスレッドに届くより前なので、切り替え直後に届いた古い LQM は前のネットワークのもの
+        // Log timestamps predate arrival at the main thread, so an old LQM arriving right after a switch belongs to the previous network
         let mut s = Stamper::new();
         s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") });
         s.handle(Event::Router { t: ts(30), router: router("bb:bb:bb:bb:bb:bb") });

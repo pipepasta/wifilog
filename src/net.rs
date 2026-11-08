@@ -1,6 +1,6 @@
-//! Wi-Fi のインターフェース、ゲートウェイ（ルーター）、その MAC アドレスを調べる。
+//! Looks up the Wi-Fi interface, its gateway (router), and the router's MAC address.
 //!
-//! SSID / BSSID は macOS が伏せるので取れない。代わりにルーターの MAC アドレスでネットワークを区別する。
+//! macOS redacts the SSID / BSSID, so networks are told apart by the router's MAC address instead.
 
 use std::process::Command;
 
@@ -10,7 +10,7 @@ pub struct Router {
     pub mac: Option<String>,
 }
 
-/// `networksetup -listallhardwareports` の出力から Wi-Fi のデバイス名（例: `en0`）を取る。
+/// Extracts the Wi-Fi device name (e.g. `en0`) from `networksetup -listallhardwareports` output.
 pub fn parse_wifi_device(output: &str) -> Option<String> {
     let mut lines = output.lines();
     while let Some(line) = lines.next() {
@@ -25,13 +25,13 @@ pub fn parse_wifi_device(output: &str) -> Option<String> {
     None
 }
 
-/// `ipconfig getoption <dev> router` の出力からゲートウェイの IP を取る。未接続なら空。
+/// Extracts the gateway IP from `ipconfig getoption <dev> router` output. Empty when not connected.
 pub fn parse_router_ip(output: &str) -> Option<String> {
     let ip = output.trim();
     (!ip.is_empty()).then(|| ip.to_string())
 }
 
-/// `arp -n <ip>` の出力から MAC アドレスを取り、`00:1a:2b:03:04:05` の形にそろえる。
+/// Extracts the MAC address from `arp -n <ip>` output, normalized to the `00:1a:2b:03:04:05` form.
 pub fn parse_arp_mac(output: &str) -> Option<String> {
     let raw = output.split(" at ").nth(1)?.split_whitespace().next()?;
     let octets: Vec<&str> = raw.split(':').collect();
@@ -58,12 +58,12 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Wi-Fi のデバイス名。
+/// The Wi-Fi device name.
 pub fn wifi_device() -> Option<String> {
     parse_wifi_device(&run("networksetup", &["-listallhardwareports"])?)
 }
 
-/// Wi-Fi 側のゲートウェイとその MAC アドレス。Wi-Fi に繋がっていなければ `None`。
+/// The Wi-Fi gateway and its MAC address. `None` when Wi-Fi is not connected.
 pub fn current_router(device: &str) -> Option<Router> {
     let ip = parse_router_ip(&run("ipconfig", &["getoption", device, "router"])?)?;
     let mac = run("arp", &["-n", &ip]).and_then(|o| parse_arp_mac(&o));
@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn router_ip_from_ipconfig() {
         assert_eq!(parse_router_ip("192.168.11.1\n"), Some("192.168.11.1".into()));
-        assert_eq!(parse_router_ip(""), None); // Wi-Fi 未接続
+        assert_eq!(parse_router_ip(""), None); // Wi-Fi not connected
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! `ping` の出力 1 行を解析する。
+//! Parses one line of `ping` output.
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PingLine {
@@ -6,7 +6,7 @@ pub enum PingLine {
     Reply { ms: f64 },
     /// `Request timeout for icmp_seq 1`
     Timeout,
-    /// ヘッダーなど、それ以外の行
+    /// Any other line, such as the header
     Other,
 }
 

@@ -1,6 +1,6 @@
-//! 描画用のデータを組み立てる（ネットワークごとの区切り、線の切れ目、間引き、統計）。
+//! Builds the data for drawing (per-network splits, line gaps, downsampling, stats).
 //!
-//! x 座標はすべて「表示する期間の始まりからの秒数」。`view` と `show-report` の両方がこれを使う。
+//! Every x coordinate is "seconds since the start of the displayed window". Used by both `view` and `show-report`.
 
 use std::collections::HashMap;
 
@@ -8,7 +8,7 @@ use chrono::{DateTime, FixedOffset};
 
 use crate::record::{Record, Target};
 
-/// 同じ指標の点の間隔がこれより空いたら、線を切る（スリープ中など）。
+/// Break the line when points of the same metric are further apart than this (e.g. during sleep).
 pub const GAP_SECS: i64 = 15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,7 +25,7 @@ pub enum Metric {
 }
 
 impl Metric {
-    /// 間引くときに合計する指標（それ以外は平均）。
+    /// Metrics summed when downsampling (the rest are averaged).
     fn is_count(self) -> bool {
         matches!(self, Metric::Retx | Metric::Fail)
     }
@@ -56,11 +56,11 @@ pub struct Stats {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Network {
-    /// 出てきた順に 'A', 'B', …。ネットワーク不明は '?'
+    /// 'A', 'B', … in order of appearance. '?' for an unknown network
     pub label: char,
-    /// ルーターの MAC アドレス
+    /// The router's MAC address
     pub mac: Option<String>,
-    /// 期間の中でそのネットワークにいた秒数
+    /// Seconds spent on this network within the window
     pub secs: i64,
 }
 
@@ -68,32 +68,32 @@ pub struct Network {
 pub struct Model {
     pub window: Window,
     pub networks: Vec<Network>,
-    /// ネットワークが切り替わった時刻の x と、切り替わり先の記号
+    /// x of each network switch, and the label switched to
     pub switches: Vec<(f64, char)>,
-    /// 指標ごとの線分（連続した区間）のリスト
+    /// Line segments (continuous runs) per metric
     pub lines: HashMap<Metric, Vec<Vec<(f64, f64)>>>,
     pub stats: HashMap<(Metric, char), Stats>,
-    /// タイムアウト数 ÷ ping の数
+    /// Timeouts ÷ pings
     pub loss: HashMap<(Target, char), f64>,
-    /// 最後のネットワークでの、各指標の最新値
+    /// Latest value of each metric on the last network
     pub latest: HashMap<Metric, f64>,
-    /// 最後の LQM の (チャンネル, 帯域幅)
+    /// (channel, bandwidth) from the last LQM
     pub channel: Option<(u32, u32)>,
     pub last_record: Option<DateTime<FixedOffset>>,
-    /// 最後の LQM（電波の値）の時刻
+    /// Time of the last LQM (radio values)
     pub last_lqm: Option<DateTime<FixedOffset>>,
-    /// 最後のネットワークの記号
+    /// Label of the last network
     current: Option<char>,
 }
 
 impl Model {
-    /// 最後のネットワーク（今いるネットワーク）の記号。
+    /// Label of the last network (the current one).
     pub fn current_label(&self) -> Option<char> {
         self.current
     }
 }
 
-/// 間引く前の 1 点。
+/// A single point before downsampling.
 struct Point {
     t: DateTime<FixedOffset>,
     label: char,
@@ -111,7 +111,7 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
     let current = labels.last().copied();
 
     let mut points: HashMap<Metric, Vec<Point>> = HashMap::new();
-    let mut pings: HashMap<(Target, char), (u32, u32)> = HashMap::new(); // (総数, タイムアウト)
+    let mut pings: HashMap<(Target, char), (u32, u32)> = HashMap::new(); // (total, timeouts)
     let mut channel = None;
     let mut last_lqm = None;
     for (r, &label) in recs.iter().zip(&labels) {
@@ -193,7 +193,7 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
     }
 }
 
-/// レコードごとのネットワーク記号を決め、切り替わりの位置と各ネットワークにいた時間を求める。
+/// Assigns a network label to each record, and finds the switch points and the time spent on each network.
 fn label_networks(
     recs: &[&Record],
     window: &Window,
@@ -203,7 +203,7 @@ fn label_networks(
     let mut labels = Vec::with_capacity(recs.len());
     let mut by_mac: HashMap<Option<String>, char> = HashMap::new();
     let mut next = 'A';
-    // (今のネットワーク, その記号, 区間の始まり)
+    // (current network, its label, start of the run)
     let mut cur: Option<(Option<String>, char, DateTime<FixedOffset>)> = None;
 
     let add_secs = |networks: &mut Vec<Network>, label: char, secs: i64| {
@@ -240,7 +240,7 @@ fn label_networks(
     (networks, switches, labels)
 }
 
-/// ネットワークが変わるか、`GAP_SECS` より空いたところで切る。
+/// Splits where the network changes or the gap exceeds `GAP_SECS`.
 fn split_segments(pts: &[Point]) -> Vec<&[Point]> {
     let mut segments = Vec::new();
     let mut start = 0;
@@ -257,7 +257,7 @@ fn split_segments(pts: &[Point]) -> Vec<&[Point]> {
     segments
 }
 
-/// 幅 `width` 秒の区間ごとにまとめる。点の x は区間の中央。
+/// Groups points into buckets `width` seconds wide. Each point's x is the bucket's center.
 fn downsample(
     seg: &[Point],
     metric: Metric,

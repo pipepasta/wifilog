@@ -1,6 +1,6 @@
-//! 画面の描画。`view` と `show-report` で共通。
+//! Screen drawing, shared by `view` and `show-report`.
 //!
-//! グラフを縦に 5 段積み、すべての段で時刻の軸（x 軸）をそろえる。
+//! Stacks 5 charts vertically, with the time axis (x axis) aligned across all of them.
 
 use chrono::{DateTime, Duration, FixedOffset};
 use ratatui::Frame;
@@ -20,27 +20,27 @@ pub enum Mode {
     Report { span_label: &'static str },
 }
 
-/// 5 段の見出し（上から順）。
+/// Titles of the 5 panels (top to bottom).
 pub const PANEL_TITLES: [&str; 5] =
-    ["RSSI / SNR", "遅延（ルーター / インターネット）", "チャンネル混雑度", "送信速度", "再送・失敗"];
+    ["RSSI / SNR", "Latency (router / internet)", "Channel utilization", "TX rate", "Retries / failures"];
 
-/// 記録が止まったとみなすまでの時間。
+/// How long without records before recording is considered stopped.
 const STALE: Duration = Duration::seconds(30);
-/// 1 段の最低の高さ（枠の上下 2 行 ＋ グラフ 1 行）。
+/// Minimum panel height (2 border rows + 1 chart row).
 const MIN_PANEL_HEIGHT: u16 = 3;
 
-/// y 軸の目盛りの幅。全段で同じにして、グラフの左端（時刻の軸）をそろえる。
+/// Width of the y-axis labels. Same for every panel so the charts' left edges (time axes) line up.
 const Y_LABEL_WIDTH: usize = 6;
 
 struct Panel {
-    /// グラフに描く指標（同じ単位のものだけ）
+    /// Metrics plotted in the chart (same unit only)
     chart: &'static [Metric],
-    /// 見出しの右に数字で出す指標
+    /// Metrics shown as numbers to the right of the title
     values: &'static [Metric],
 }
 
 const PANELS: [Panel; 5] = [
-    // RSSI とノイズを描く。2 本の線の間隔が SNR になる
+    // Plot RSSI and noise; the gap between the two lines is the SNR
     Panel { chart: &[Metric::Rssi, Metric::Noise], values: &[Metric::Rssi, Metric::Snr] },
     Panel {
         chart: &[Metric::RouterMs, Metric::InternetMs],
@@ -54,14 +54,14 @@ const PANELS: [Panel; 5] = [
 fn name(m: Metric) -> &'static str {
     match m {
         Metric::Rssi => "RSSI",
-        Metric::Noise => "ノイズ",
+        Metric::Noise => "Noise",
         Metric::Snr => "SNR",
-        Metric::RouterMs => "ルーター",
-        Metric::InternetMs => "ネット",
-        Metric::Cca => "混雑",
-        Metric::Tx => "送信",
-        Metric::Retx => "再送",
-        Metric::Fail => "失敗",
+        Metric::RouterMs => "Router",
+        Metric::InternetMs => "Internet",
+        Metric::Cca => "Util",
+        Metric::Tx => "TX",
+        Metric::Retx => "Retry",
+        Metric::Fail => "Fail",
     }
 }
 
@@ -99,7 +99,7 @@ fn color(m: Metric) -> Color {
 
 /// `aa:bb:cc:dd:ee:12` → `aa:bb:…:12`
 fn short_mac(mac: Option<&str>) -> String {
-    let Some(mac) = mac else { return "不明".into() };
+    let Some(mac) = mac else { return "unknown".into() };
     let p: Vec<&str> = mac.split(':').collect();
     if p.len() != 6 {
         return mac.to_string();
@@ -109,10 +109,10 @@ fn short_mac(mac: Option<&str>) -> String {
 
 fn fmt_secs(secs: i64) -> String {
     let (h, m) = (secs / 3600, secs % 3600 / 60);
-    if h > 0 { format!("{h}時間{m:02}分") } else { format!("{m}分") }
+    if h > 0 { format!("{h}h{m:02}m") } else { format!("{m}m") }
 }
 
-/// グラフの横のドット数（点字マーカーは 1 文字が横 2 ドット）。y 軸の目盛りと枠の分を引く。
+/// Horizontal dot count of a chart (a braille marker is 2 dots wide per cell), minus the y-axis labels and border.
 pub fn chart_buckets(area_width: u16) -> usize {
     (area_width.saturating_sub(10) as usize * 2).max(1)
 }
@@ -133,8 +133,8 @@ pub fn draw(frame: &mut Frame, model: &Model, mode: &Mode, now: DateTime<FixedOf
         frame.render_widget(Paragraph::new(legend_text(model)), legend_area);
     }
     let footer_text = match mode {
-        Mode::Live { .. } => "q 終了   ←/→ 時間幅   space 一時停止",
-        Mode::Report { .. } => "q 終了",
+        Mode::Live { .. } => "q quit   ←/→ span   space pause",
+        Mode::Report { .. } => "q quit",
     };
     frame.render_widget(
         Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray)),
@@ -170,26 +170,26 @@ fn draw_header(
     let span = match mode {
         Mode::Live { span_label, .. } | Mode::Report { span_label } => span_label,
     };
-    let left = format!("wifilog ─ ルーター {} ─ {channel} ─ {span}", short_mac(mac));
+    let left = format!("wifilog ─ router {} ─ {channel} ─ {span}", short_mac(mac));
 
     let (right, color) = match mode {
         Mode::Live { paused, .. } => {
             let stale = |t: Option<DateTime<FixedOffset>>| t.is_none_or(|t| now - t >= STALE);
-            // 今いるネットワークが分かっているのに電波の値だけが来ない（ログの書式の変化など）
+            // The current network is known but radio values are not arriving (e.g. the log format changed)
             let radio_missing = current.is_some_and(|l| l != '?') && stale(model.last_lqm);
             if *paused {
-                ("⏸ 一時停止".to_string(), Color::Yellow)
+                ("⏸ paused".to_string(), Color::Yellow)
             } else if stale(model.last_record) {
-                ("⚠ 計測が止まっています（wifilog status で確認）".to_string(), Color::Yellow)
+                ("⚠ collector stopped (check `wifilog status`)".to_string(), Color::Yellow)
             } else if radio_missing {
-                ("⚠ 電波の値が取れていません（wifilog.log を確認）".to_string(), Color::Yellow)
+                ("⚠ no radio data (check wifilog.log)".to_string(), Color::Yellow)
             } else {
-                (format!("● 計測中 {}", now.format("%H:%M:%S")), Color::Green)
+                (format!("● recording {}", now.format("%H:%M:%S")), Color::Green)
             }
         }
         Mode::Report { .. } => (
             format!(
-                "期間 {}〜{}",
+                "period {} – {}",
                 model.window.from.format("%m/%d %H:%M"),
                 model.window.to.format("%m/%d %H:%M")
             ),
@@ -203,7 +203,7 @@ fn draw_header(
     );
 }
 
-/// 24 時間以上の期間では、同じ時刻が 2 回出てくるので日付も付ける。
+/// Windows of 24 hours or more repeat times of day, so include the date.
 fn time_format(model: &Model) -> &'static str {
     if model.window.secs() >= 24.0 * 3600.0 { "%m/%d %H:%M" } else { "%H:%M" }
 }
@@ -223,12 +223,12 @@ fn legend_text(model: &Model) -> String {
                 format!("{} →{label}", t.format(time_format(model)))
             })
             .collect();
-        parts.push(format!("│ 切替 {}", switches.join(", ")));
+        parts.push(format!("│ switched {}", switches.join(", ")));
     }
     parts.join("  ")
 }
 
-/// ネットワーク `label` の「ルーター / インターネット」のロス率。
+/// Router / internet loss rates for network `label`.
 fn loss_text(model: &Model, label: char) -> String {
     let pct = |t: Target| {
         model.loss.get(&(t, label)).map_or("-".to_string(), |l| format!("{:.0}%", l * 100.0))
@@ -236,12 +236,12 @@ fn loss_text(model: &Model, label: char) -> String {
     format!("{} / {}", pct(Target::Router), pct(Target::Internet))
 }
 
-/// 見出しの右に出す数字の候補（長い順）。入りきるものを使う。
+/// Candidate value texts for the right of the title (longest first). The first that fits is used.
 fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
     let label = model.current_label();
     let has_delay = metrics.contains(&Metric::RouterMs);
 
-    // レポートで期間内に複数のネットワークがあるときは、混ぜずにネットワークごとの平均を並べる
+    // In a report spanning multiple networks, list per-network averages instead of mixing them
     if matches!(mode, Mode::Report { .. }) && model.networks.len() >= 2 {
         let primary = metrics[0];
         let mut nets: Vec<_> = model.networks.iter().collect();
@@ -253,7 +253,7 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
                 .filter_map(|n| {
                     let s = model.stats.get(&(primary, n.label))?;
                     let loss = if has_delay && with_loss {
-                        format!("（ロス {}）", loss_text(model, n.label))
+                        format!(" (loss {})", loss_text(model, n.label))
                     } else {
                         String::new()
                     };
@@ -261,9 +261,9 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
                 })
                 .collect();
             if nets.len() > limit {
-                parts.push(format!("他 {}", nets.len() - limit));
+                parts.push(format!("others {}", nets.len() - limit));
             }
-            format!("平均 {}", parts.join(" / "))
+            format!("avg {}", parts.join(" / "))
         };
         return vec![per_net(3, true), per_net(2, true), per_net(1, true), per_net(1, false)];
     }
@@ -279,12 +279,12 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
             .join(" / ")
     };
     let loss = match label {
-        Some(label) if has_delay => format!(" ・ ロス {}", loss_text(model, label)),
+        Some(label) if has_delay => format!(" · loss {}", loss_text(model, label)),
         _ => String::new(),
     };
 
     match mode {
-        // view は常に今いるネットワークの最新値
+        // view always shows the latest values on the current network
         Mode::Live { .. } => {
             let latest = |m: Metric| model.latest.get(&m).copied();
             let named = join(&latest, true);
@@ -297,10 +297,10 @@ fn panel_values(model: &Model, mode: &Mode, metrics: &[Metric]) -> Vec<String> {
             let min = join(&|m| stat(m).map(|s| s.min), false);
             let max = join(&|m| stat(m).map(|s| s.max), false);
             vec![
-                format!("平均 {avg} ・ 最小 {min} ・ 最大 {max}{loss}"),
-                format!("平均 {avg} ・ 最大 {max}{loss}"),
-                format!("平均 {avg}{loss}"),
-                format!("平均 {avg}"),
+                format!("avg {avg} · min {min} · max {max}{loss}"),
+                format!("avg {avg} · max {max}{loss}"),
+                format!("avg {avg}{loss}"),
+                format!("avg {avg}"),
             ]
         }
     }
@@ -366,7 +366,7 @@ fn draw_panel(
         }
     }
 
-    // 見出しの後ろに、線の色と指標名の対応（━RSSI ━ノイズ）を付ける
+    // After the title, add a color key mapping lines to metric names (━RSSI ━Noise)
     let mut spans = vec![Span::raw(format!(" {} ", PANEL_TITLES[index]))];
     for (i, &m) in metrics.iter().enumerate() {
         let sep = if i == 0 { "" } else { " " };
@@ -374,7 +374,7 @@ fn draw_panel(
     }
     spans.push(Span::raw(" "));
     let title = Line::from(spans);
-    // 枠の角 2 つと、見出しとの間の余白 2 つ分を引いた幅に収まる候補を使う
+    // Use the first candidate that fits the width minus 2 border corners and 2 spaces of padding around the title
     let room = (area.width as usize).saturating_sub(title.width() + 4);
     let value = panel_values(model, mode, panel.values)
         .into_iter()
@@ -461,7 +461,7 @@ mod tests {
         build(&records(nets), Window { from: at(0), to: at(900) }, 200)
     }
 
-    /// 画面を行ごとの文字列にする（全角文字の 2 マス目は飛ばす）。
+    /// Renders the screen as one string per row (skipping the second cell of wide characters).
     fn render(m: &Model, mode: &Mode, now: DateTime<FixedOffset>, w: u16, h: u16) -> Vec<String> {
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
         term.draw(|f| draw(f, m, mode, now)).unwrap();
@@ -487,8 +487,8 @@ mod tests {
             .unwrap_or_else(|| panic!("{text:?} not found in:\n{}", lines.join("\n")))
     }
 
-    const LIVE: Mode = Mode::Live { paused: false, span_label: "直近15分" };
-    const REPORT: Mode = Mode::Report { span_label: "過去15分" };
+    const LIVE: Mode = Mode::Live { paused: false, span_label: "last 15 min" };
+    const REPORT: Mode = Mode::Report { span_label: "past 15 min" };
 
     #[test]
     fn panels_are_stacked_in_order() {
@@ -497,15 +497,15 @@ mod tests {
         assert!(rows.windows(2).all(|w| w[0] < w[1]), "rows: {rows:?}");
         assert_eq!(
             PANEL_TITLES,
-            ["RSSI / SNR", "遅延（ルーター / インターネット）", "チャンネル混雑度", "送信速度", "再送・失敗"]
+            ["RSSI / SNR", "Latency (router / internet)", "Channel utilization", "TX rate", "Retries / failures"]
         );
     }
 
     #[test]
     fn report_header_shows_period() {
         let lines = render(&model(&[(A, 0, 900)]), &REPORT, at(900), 120, 40);
-        assert!(lines[0].contains("期間 "), "{}", lines[0]);
-        assert!(!lines[0].contains("● 計測中"), "{}", lines[0]);
+        assert!(lines[0].contains("period "), "{}", lines[0]);
+        assert!(!lines[0].contains("● recording"), "{}", lines[0]);
     }
 
     #[test]
@@ -513,9 +513,9 @@ mod tests {
         let m = model(&[(A, 0, 900)]);
         let last = m.last_record.unwrap();
         let lines = render(&m, &LIVE, last + chrono::Duration::seconds(60), 120, 40);
-        assert!(lines[0].contains("計測が止まっています"), "{}", lines[0]);
+        assert!(lines[0].contains("collector stopped"), "{}", lines[0]);
         let fresh = render(&m, &LIVE, last + chrono::Duration::seconds(3), 120, 40);
-        assert!(fresh[0].contains("● 計測中"), "{}", fresh[0]);
+        assert!(fresh[0].contains("● recording"), "{}", fresh[0]);
     }
 
     #[test]
@@ -532,10 +532,10 @@ mod tests {
     fn small_terminal_does_not_panic() {
         let lines = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 80, 12);
         row_of(&lines, "RSSI / SNR");
-        assert!(!lines.iter().any(|l| l.contains("再送・失敗")));
+        assert!(!lines.iter().any(|l| l.contains("Retries / failures")));
     }
 
-    /// 各段のグラフの左端（y 軸の線）の列が、全段でそろっている。
+    /// Each chart's left edge (the y-axis line) is in the same column in every panel.
     #[test]
     fn chart_columns_are_aligned_across_panels() {
         let lines = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 120, 40);
@@ -544,21 +544,21 @@ mod tests {
             .map(|t| {
                 let row = &lines[row_of(&lines, t) + 1];
                 let chars: Vec<char> = row.chars().collect();
-                // 枠の左の線の次に出てくる縦線が y 軸
+                // The first vertical line after the left border is the y axis
                 chars.iter().skip(1).position(|&c| c == '│').unwrap() + 1
             })
             .collect();
         assert!(axis_cols.windows(2).all(|w| w[0] == w[1]), "axis columns: {axis_cols:?}");
     }
 
-    /// 1 段目は dBm の値（RSSI とノイズ）だけを描くので、y 軸の範囲は負の値に収まる。
+    /// The first panel plots only dBm values (RSSI and noise), so its y range stays negative.
     #[test]
     fn first_panel_plots_only_dbm_values() {
         let [lo, hi] = y_bounds(&model(&[(A, 0, 900)]), PANELS[0].chart);
         assert!(hi < 0.0 && lo < -95.0, "bounds: {lo}..{hi}");
     }
 
-    /// 数字が長くても、見出しは隠れない。
+    /// Long values never hide the titles.
     #[test]
     fn long_values_do_not_hide_titles() {
         let lines = render(&model(&[(A, 0, 900)]), &REPORT, at(900), 90, 40);
@@ -571,39 +571,39 @@ mod tests {
     fn paused_never_shows_stale_warning() {
         let m = model(&[(A, 0, 900)]);
         let late = m.last_record.unwrap() + chrono::Duration::seconds(120);
-        let paused = Mode::Live { paused: true, span_label: "直近15分" };
+        let paused = Mode::Live { paused: true, span_label: "last 15 min" };
         let lines = render(&m, &paused, late, 120, 40);
-        assert!(lines[0].contains("一時停止"), "{}", lines[0]);
-        assert!(!lines[0].contains("止まっています"), "{}", lines[0]);
+        assert!(lines[0].contains("paused"), "{}", lines[0]);
+        assert!(!lines[0].contains("collector stopped"), "{}", lines[0]);
     }
 
     #[test]
     fn live_with_two_networks_shows_current_values_and_loss() {
         let lines = render(&model(&[(A, 0, 450), (B, 450, 900)]), &LIVE, at(900), 140, 40);
-        let row = &lines[row_of(&lines, "遅延（ルーター / インターネット）")];
-        assert!(row.contains("ネット 10.5 ms"), "{row}");
-        assert!(row.contains("ロス"), "{row}");
+        let row = &lines[row_of(&lines, "Latency (router / internet)")];
+        assert!(row.contains("Internet 10.5 ms"), "{row}");
+        assert!(row.contains("loss"), "{row}");
     }
 
     #[test]
     fn report_with_two_networks_shows_loss() {
         let lines = render(&model(&[(A, 0, 450), (B, 450, 900)]), &REPORT, at(900), 140, 40);
-        let row = &lines[row_of(&lines, "遅延（ルーター / インターネット）")];
+        let row = &lines[row_of(&lines, "Latency (router / internet)")];
         assert!(row.contains("A 2.8"), "{row}");
-        assert!(row.contains("ロス"), "{row}");
+        assert!(row.contains("loss"), "{row}");
     }
 
     #[test]
     fn panel_titles_carry_a_color_key() {
         let lines = render(&model(&[(A, 0, 900)]), &LIVE, at(900), 140, 40);
-        assert!(lines[row_of(&lines, "RSSI / SNR")].contains("━RSSI ━ノイズ"));
-        assert!(lines[row_of(&lines, "遅延（ルーター / インターネット）")].contains("━ルーター ━ネット"));
-        assert!(lines[row_of(&lines, "再送・失敗")].contains("━再送 ━失敗"));
+        assert!(lines[row_of(&lines, "RSSI / SNR")].contains("━RSSI ━Noise"));
+        assert!(lines[row_of(&lines, "Latency (router / internet)")].contains("━Router ━Internet"));
+        assert!(lines[row_of(&lines, "Retries / failures")].contains("━Retry ━Fail"));
     }
 
     #[test]
     fn live_warns_when_only_radio_values_stop() {
-        // ping は届き続けているが、電波の値（LQM）が 60 秒来ていない
+        // pings keep arriving, but no radio values (LQM) for 60 seconds
         let mut recs = records(&[(A, 0, 840)]);
         for s in (840..900).step_by(5) {
             recs.push(Record::Ping(PingRecord {
@@ -615,7 +615,7 @@ mod tests {
         }
         let m = build(&recs, Window { from: at(0), to: at(900) }, 200);
         let lines = render(&m, &LIVE, at(900), 120, 40);
-        assert!(lines[0].contains("電波の値が取れていません"), "{}", lines[0]);
+        assert!(lines[0].contains("no radio data"), "{}", lines[0]);
     }
 
     #[test]

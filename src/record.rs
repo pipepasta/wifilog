@@ -1,14 +1,14 @@
-//! 保存するレコードの型。1 行 1 件の JSON として日ごとのファイルに書く。
+//! Types of the stored records. Written to daily files, one JSON object per line.
 //!
-//! 例:
+//! Example:
 //! `{"t":"…","k":"lqm","net":"aa:bb:cc:dd:ee:12","rssi":-41,…}`
-//! `{"t":"…","k":"ping","net":"…","dst":"router","ms":2.8}`（`ms: null` はロス）
+//! `{"t":"…","k":"ping","net":"…","dst":"router","ms":2.8}` (`ms: null` means loss)
 //! `{"t":"…","k":"net","net":"…","router_ip":"192.168.11.1"}`
 
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 
-/// ping の宛先。
+/// A ping target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
@@ -16,7 +16,7 @@ pub enum Target {
     Internet,
 }
 
-/// ネットワーク（ルーター）が変わったときの記録。`net` はルーターの MAC アドレス。
+/// Recorded when the network (router) changes. `net` is the router's MAC address.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetRecord {
     pub t: DateTime<FixedOffset>,
@@ -24,30 +24,30 @@ pub struct NetRecord {
     pub router_ip: Option<String>,
 }
 
-/// airportd の LQM から取った電波の値。
+/// Radio values taken from airportd's LQM.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LqmValues {
-    /// 受信信号強度 (dBm)
+    /// Received signal strength (dBm)
     pub rssi: i32,
-    /// ノイズフロア (dBm)
+    /// Noise floor (dBm)
     pub noise: i32,
-    /// 信号とノイズの差 (dB)
+    /// Signal minus noise (dB)
     pub snr: i32,
-    /// チャンネルの混雑度 (%)
+    /// Channel utilization (%)
     pub cca: f64,
-    /// 送信のリンク速度 (Mbps)
+    /// TX link rate (Mbps)
     pub tx: f64,
-    /// 受信のリンク速度 (Mbps)
+    /// RX link rate (Mbps)
     pub rx: f64,
-    /// 送信したフレーム数
+    /// Frames sent
     pub txf: u32,
-    /// 送信に失敗したフレーム数
+    /// Frames that failed to send
     pub fail: u32,
-    /// 再送したフレーム数
+    /// Frames retransmitted
     pub retx: u32,
-    /// チャンネル
+    /// Channel
     pub ch: Option<u32>,
-    /// 帯域幅 (MHz)
+    /// Bandwidth (MHz)
     pub bw: Option<u32>,
 }
 
@@ -64,7 +64,7 @@ pub struct PingRecord {
     pub t: DateTime<FixedOffset>,
     pub net: Option<String>,
     pub dst: Target,
-    /// 往復時間 (ms)。`None` はタイムアウト（ロス）
+    /// Round-trip time (ms). `None` is a timeout (loss)
     pub ms: Option<f64>,
 }
 
@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(l.v.rssi, -41);
         assert_eq!(l.v.bw, Some(80));
         assert_eq!(r.net(), Some("aa:bb:cc:dd:ee:12"));
-        // 往復しても同じ値になる（キーの順序は問わない）
+        // Round-trips to the same value (key order doesn't matter)
         let back: serde_json::Value = serde_json::to_value(&r).unwrap();
         assert_eq!(back, serde_json::from_str::<serde_json::Value>(json).unwrap());
     }

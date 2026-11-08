@@ -17,7 +17,7 @@ use clap::{Parser, Subcommand};
 use daemon::{StartOutcome, Status};
 use record::Record;
 
-/// Mac の Wi-Fi の品質を記録して、ターミナルで推移を見る
+/// Record your Mac's Wi-Fi quality and watch how it changes in the terminal
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -27,65 +27,65 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// 計測を始める（裏で動き続ける）
+    /// Start recording (keeps running in the background)
     Start {
-        /// 裏に回らず、その場で計測し続ける（launchd から使う）
+        /// Record in the foreground instead of detaching (for launchd)
         #[arg(long)]
         foreground: bool,
-        /// インターネット側の ping の宛先（既定: 環境変数 WIFILOG_INTERNET、なければ 1.1.1.1）
+        /// Internet ping target (default: the WIFILOG_INTERNET environment variable, or 1.1.1.1)
         #[arg(long, value_name = "HOST")]
         internet: Option<String>,
     },
-    /// 計測を止める
+    /// Stop recording
     Stop,
-    /// 計測が動いているか、最後にいつ記録したかを表示する
+    /// Show whether recording is running and when the last records were written
     Status,
-    /// 推移をリアルタイムで見る（計測が止まっていれば始める。閉じても計測は続く）
+    /// Watch live (starts recording if stopped; recording continues after you close it)
     View,
-    /// 過去の期間の推移を見る（指定がなければ過去1時間）
+    /// View a past period (default: past 1 hour)
     ShowReport(ReportArgs),
 }
 
 #[derive(clap::Args)]
 #[group(multiple = false)]
 struct ReportArgs {
-    /// 過去5分
+    /// Past 5 minutes
     #[arg(long = "5m")]
     m5: bool,
-    /// 過去1時間
+    /// Past 1 hour
     #[arg(long = "1h")]
     h1: bool,
-    /// 過去24時間
+    /// Past 24 hours
     #[arg(long = "24h")]
     h24: bool,
-    /// 過去7日
+    /// Past 7 days
     #[arg(long = "7d")]
     d7: bool,
 }
 
 fn report_span(a: &ReportArgs) -> (chrono::Duration, &'static str) {
     if a.m5 {
-        (chrono::Duration::minutes(5), "過去5分")
+        (chrono::Duration::minutes(5), "past 5 min")
     } else if a.h24 {
-        (chrono::Duration::hours(24), "過去24時間")
+        (chrono::Duration::hours(24), "past 24 hours")
     } else if a.d7 {
-        (chrono::Duration::days(7), "過去7日")
+        (chrono::Duration::days(7), "past 7 days")
     } else {
-        (chrono::Duration::hours(1), "過去1時間")
+        (chrono::Duration::hours(1), "past 1 hour")
     }
 }
 
 const DEFAULT_INTERNET: &str = "1.1.1.1";
 
-/// インターネット側の宛先。フラグ > 環境変数 `WIFILOG_INTERNET` > 既定値 の順。
+/// The internet target. Precedence: flag > `WIFILOG_INTERNET` environment variable > default.
 fn internet_target(flag: Option<String>, env: Option<String>) -> String {
     flag.or(env).unwrap_or_else(|| DEFAULT_INTERNET.to_string())
 }
 
 fn main() -> Result<()> {
-    // Rust は SIGPIPE を無視するので、`wifilog status | head -1` のように読み手が先に閉じると
-    // println! がパニックする。普通の CLI と同じく、静かに終了するようにしておく。
-    // SAFETY: シグナルの扱いを既定に戻すだけで、スレッドを立てる前に呼んでいる
+    // Rust ignores SIGPIPE, so when the reader closes first, as in `wifilog status | head -1`,
+    // println! panics. Exit quietly instead, like any ordinary CLI.
+    // SAFETY: only restores the default signal disposition, and runs before any threads are spawned
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
@@ -96,21 +96,21 @@ fn main() -> Result<()> {
             let internet = internet_target(internet, std::env::var("WIFILOG_INTERNET").ok());
             if foreground {
                 let Some(_lock) = daemon::acquire(&dir)? else {
-                    bail!("すでに計測中です（`wifilog status` で確認できます）");
+                    bail!("Already recording (see `wifilog status`)");
                 };
                 return collector::run_foreground(&dir, &internet);
             }
             match daemon::start(&dir, &internet)? {
-                StartOutcome::Started { pid } => println!("計測を開始しました（pid {pid}）"),
-                StartOutcome::AlreadyRunning { pid } => println!("すでに計測中です（pid {pid}）"),
+                StartOutcome::Started { pid } => println!("Started recording (pid {pid})"),
+                StartOutcome::AlreadyRunning { pid } => println!("Already recording (pid {pid})"),
             }
             Ok(())
         }
         Cmd::Stop => {
             if daemon::stop(&dir)? {
-                println!("計測を止めました");
+                println!("Stopped recording");
             } else {
-                println!("計測は動いていません");
+                println!("Not running");
             }
             Ok(())
         }
@@ -129,10 +129,10 @@ fn main() -> Result<()> {
 fn print_status(dir: &Path) -> Result<()> {
     match daemon::status(dir)? {
         Status::Running { pid, since } => {
-            let since = since.map_or("不明".to_string(), |s| s.format("%m/%d %H:%M").to_string());
-            println!("計測中（pid {pid}、{since} から）");
+            let since = since.map_or("unknown".to_string(), |s| s.format("%m/%d %H:%M").to_string());
+            println!("Recording (pid {pid}, since {since})");
         }
-        Status::Stopped => println!("停止中"),
+        Status::Stopped => println!("Stopped"),
     }
 
     let now = Local::now().fixed_offset();
@@ -142,14 +142,14 @@ fn print_status(dir: &Path) -> Result<()> {
             .iter()
             .rev()
             .find(|r| pick(r))
-            .map_or("記録なし".to_string(), |r| r.t().format("%H:%M:%S").to_string())
+            .map_or("none".to_string(), |r| r.t().format("%H:%M:%S").to_string())
     };
     println!(
-        "最後の記録（直近10分）: 電波 {} / ping {}",
+        "Last records (past 10 min): radio {} / ping {}",
         last(|r| matches!(r, Record::Lqm(_))),
         last(|r| matches!(r, Record::Ping(_))),
     );
-    println!("データ: {}", dir.display());
+    println!("Data: {}", dir.display());
     Ok(())
 }
 
@@ -168,14 +168,14 @@ mod tests {
 
     #[test]
     fn report_span_defaults_to_one_hour() {
-        assert_eq!(report_span(&report_args(&[]).unwrap()), (chrono::Duration::hours(1), "過去1時間"));
+        assert_eq!(report_span(&report_args(&[]).unwrap()), (chrono::Duration::hours(1), "past 1 hour"));
     }
 
     #[test]
     fn report_span_flags() {
-        assert_eq!(report_span(&report_args(&["--5m"]).unwrap()), (chrono::Duration::minutes(5), "過去5分"));
-        assert_eq!(report_span(&report_args(&["--24h"]).unwrap()), (chrono::Duration::hours(24), "過去24時間"));
-        assert_eq!(report_span(&report_args(&["--7d"]).unwrap()), (chrono::Duration::days(7), "過去7日"));
+        assert_eq!(report_span(&report_args(&["--5m"]).unwrap()), (chrono::Duration::minutes(5), "past 5 min"));
+        assert_eq!(report_span(&report_args(&["--24h"]).unwrap()), (chrono::Duration::hours(24), "past 24 hours"));
+        assert_eq!(report_span(&report_args(&["--7d"]).unwrap()), (chrono::Duration::days(7), "past 7 days"));
     }
 
     #[test]

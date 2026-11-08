@@ -1,6 +1,6 @@
-//! 記録の保存。日ごとの JSON Lines ファイル（`samples-YYYY-MM-DD.jsonl`）に追記する。
+//! Record storage. Appends to daily JSON Lines files (`samples-YYYY-MM-DD.jsonl`).
 //!
-//! 日付は各レコードの時刻（記録したときのローカル時刻のオフセット付き）で決める。
+//! The date comes from each record's timestamp (carrying the local offset at the time it was recorded).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -11,19 +11,19 @@ use chrono::{DateTime, Days, FixedOffset, Local, NaiveDate};
 
 use crate::record::{NetRecord, Record};
 
-/// 記録を残す日数。
+/// Number of days to keep records.
 pub const KEEP_DAYS: i64 = 30;
 
 const PREFIX: &str = "samples-";
 const SUFFIX: &str = ".jsonl";
 
-/// データディレクトリ。環境変数 `WIFILOG_DIR` があればそれを使う。
+/// The data directory. Uses the `WIFILOG_DIR` environment variable if set.
 pub fn data_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("WIFILOG_DIR") {
         return Ok(PathBuf::from(dir));
     }
     Ok(dirs::data_local_dir()
-        .context("データの保存先ディレクトリが見つかりません")?
+        .context("cannot find a directory to store data in")?
         .join("wifilog"))
 }
 
@@ -36,7 +36,7 @@ fn date_of_file(path: &Path) -> Option<NaiveDate> {
     name.strip_prefix(PREFIX)?.strip_suffix(SUFFIX)?.parse().ok()
 }
 
-/// 日ごとのファイルへの追記。日付が変わると次のファイルに切り替える。
+/// Appends to daily files, switching to the next file when the date changes.
 pub struct Appender {
     dir: PathBuf,
     date: Option<NaiveDate>,
@@ -60,23 +60,23 @@ impl Appender {
         self.write(rec)
     }
 
-    /// その日のファイルを開く。新しいファイルなら、先頭に今のネットワークを書いておく
-    /// （そのファイルだけを読んでも、どのネットワークの記録かわかるように）。
+    /// Opens the day's file. A new file starts with the current network
+    /// (so that file alone tells which network its records belong to).
     fn open(&mut self, date: NaiveDate, rec: &Record) -> Result<()> {
         fs::create_dir_all(&self.dir)
-            .with_context(|| format!("{} を作れません", self.dir.display()))?;
+            .with_context(|| format!("cannot create {}", self.dir.display()))?;
         let path = day_file(&self.dir, date);
         let is_new = fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true);
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .with_context(|| format!("{} を開けません", path.display()))?;
+            .with_context(|| format!("cannot open {}", path.display()))?;
         self.file = Some(file);
         self.date = Some(date);
 
         if let Err(e) = prune(&self.dir, date, KEEP_DAYS) {
-            eprintln!("古い記録を消せませんでした: {e:#}");
+            eprintln!("could not delete old records: {e:#}");
         }
         if is_new && !matches!(rec, Record::Net(_))
             && let Some(n) = &self.last_net {
@@ -86,7 +86,7 @@ impl Appender {
         Ok(())
     }
 
-    /// 1 行を 1 回の書き込みで書く（途中で止まっても壊れるのは最後の 1 行だけ）。
+    /// Writes each line in a single write (an interruption can corrupt only the last line).
     fn write(&mut self, rec: &Record) -> Result<()> {
         let mut line = serde_json::to_string(rec)?;
         line.push('\n');
@@ -96,7 +96,7 @@ impl Appender {
     }
 }
 
-/// `today - keep_days` より前の日付のファイルを消し、消したパスを返す。
+/// Deletes files dated before `today - keep_days` and returns the deleted paths.
 pub fn prune(dir: &Path, today: NaiveDate, keep_days: i64) -> Result<Vec<PathBuf>> {
     let limit = today - chrono::Duration::days(keep_days);
     let mut removed = Vec::new();
@@ -111,7 +111,7 @@ pub fn prune(dir: &Path, today: NaiveDate, keep_days: i64) -> Result<Vec<PathBuf
     Ok(removed)
 }
 
-/// `from <= t <= to` のレコードを時刻順に返す。読めない行は飛ばす。
+/// Returns records with `from <= t <= to` in time order. Unreadable lines are skipped.
 pub fn load_range(
     dir: &Path,
     from: DateTime<FixedOffset>,
@@ -124,7 +124,7 @@ pub fn load_range(
         match fs::read_to_string(&path) {
             Ok(text) => out.extend(parse_lines(&text).filter(|r| from <= r.t() && r.t() <= to)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).with_context(|| format!("{} を読めません", path.display())),
+            Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
         }
         date = date + Days::new(1);
     }
@@ -136,7 +136,7 @@ fn parse_lines(text: &str) -> impl Iterator<Item = Record> + '_ {
     text.lines().filter_map(|l| serde_json::from_str(l).ok())
 }
 
-/// 今日のファイルの追記分を追いかける。作った時点のファイルの末尾から読み始める。
+/// Follows lines appended to today's file, starting from its end at creation time.
 pub struct Tail {
     dir: PathBuf,
     date: NaiveDate,
@@ -151,7 +151,7 @@ impl Tail {
         Tail { dir, date, pos, partial: String::new() }
     }
 
-    /// 前回から追記された、改行で終わった行を返す。途中の行は次回に持ち越す。
+    /// Returns newline-terminated lines appended since the last call. A partial line carries over to the next call.
     pub fn poll(&mut self) -> Result<Vec<Record>> {
         let mut out = self.read_new()?;
         let today = Local::now().date_naive();

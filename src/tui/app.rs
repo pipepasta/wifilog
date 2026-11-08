@@ -1,4 +1,4 @@
-//! `view`（リアルタイム）と `show-report`（固定表示）の画面の動かし方。
+//! Screen loops for `view` (live) and `show-report` (static).
 
 use std::path::Path;
 use std::time::Duration as StdDuration;
@@ -14,10 +14,10 @@ use crate::record::Record;
 use crate::series::{self, Window};
 use crate::store::{self, Tail};
 
-/// `view` の再描画の間隔。
+/// Redraw interval for `view`.
 const REFRESH: StdDuration = StdDuration::from_secs(2);
-/// `view` の時間幅（←/→ で切り替え）。
-const SPANS: [(i64, &str); 3] = [(5, "直近5分"), (15, "直近15分"), (60, "直近1時間")];
+/// Time spans for `view` (switched with ←/→).
+const SPANS: [(i64, &str); 3] = [(5, "last 5 min"), (15, "last 15 min"), (60, "last 1 hour")];
 const DEFAULT_SPAN: usize = 1;
 
 fn now() -> DateTime<FixedOffset> {
@@ -29,7 +29,7 @@ fn is_quit(key: &KeyEvent) -> bool {
         || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
 }
 
-/// 端末を必ず元に戻してから戻る。
+/// Always restores the terminal before returning.
 fn with_terminal(f: impl FnOnce(&mut DefaultTerminal) -> Result<()>) -> Result<()> {
     let mut terminal = ratatui::init();
     let result = f(&mut terminal);
@@ -37,13 +37,13 @@ fn with_terminal(f: impl FnOnce(&mut DefaultTerminal) -> Result<()>) -> Result<(
     result
 }
 
-/// メモリに残す記録の下限の時刻。
+/// The oldest record time kept in memory.
 fn retain_cutoff(
     now: DateTime<FixedOffset>,
     paused_at: Option<DateTime<FixedOffset>>,
     keep: Duration,
 ) -> DateTime<FixedOffset> {
-    // 一時停止中は止めた時刻を基準にする（止めて見ているグラフが削られないように）
+    // While paused, anchor on the pause time (so the graph being viewed is not trimmed)
     paused_at.unwrap_or(now) - keep - Duration::minutes(1)
 }
 
@@ -103,7 +103,7 @@ pub fn run_report(dir: &Path, span: Duration, label: &'static str) -> Result<()>
     let window = Window { from: to - span, to };
     let records = store::load_range(dir, window.from, window.to)?;
     if records.is_empty() {
-        println!("この期間の記録はありません（`wifilog start` で計測を始めます）");
+        println!("No records in this period (start recording with `wifilog start`)");
         return Ok(());
     }
 
@@ -113,7 +113,7 @@ pub fn run_report(dir: &Path, span: Duration, label: &'static str) -> Result<()>
                 let model = series::build(&records, window, chart_buckets(f.area().width));
                 draw(f, &model, &Mode::Report { span_label: label }, to);
             })?;
-            // サイズ変更などのイベントのたびに描き直し、終了キーで抜ける
+            // Redraw on every event (resize etc.) and exit on the quit key
             if let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press && is_quit(&key) {
                     return Ok(());
