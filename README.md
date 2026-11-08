@@ -111,3 +111,7 @@ cargo clippy --all-targets -- -D warnings
 ```
 
 The pre-commit hook runs `rustfmt` on the staged `.rs` files and re-stages them, so every commit is formatted.
+
+## License
+
+[MIT](LICENSE)
