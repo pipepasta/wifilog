@@ -12,7 +12,7 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 use chrono::Local;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use daemon::{StartOutcome, Status};
 use record::Record;
@@ -44,6 +44,11 @@ enum Cmd {
     View,
     /// View a past period (default: past 1 hour)
     ShowReport(ReportArgs),
+    /// Print a shell completion script (e.g. `source <(wifilog completions zsh)`)
+    Completions {
+        /// Target shell
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(clap::Args)]
@@ -122,6 +127,10 @@ fn main() -> Result<()> {
         Cmd::ShowReport(args) => {
             let (span, label) = report_span(&args);
             tui::app::run_report(&dir, span, label)
+        }
+        Cmd::Completions { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "wifilog", &mut std::io::stdout());
+            Ok(())
         }
     }
 }

@@ -25,6 +25,16 @@ wifilog status                # whether it's running and when it last recorded
 wifilog stop                  # stop recording
 ```
 
+### Shell completion
+
+`wifilog completions <shell>` prints a completion script for `bash`, `zsh`, `fish`, `elvish` or `powershell`. For zsh, add this to `~/.zshrc`:
+
+```sh
+source <(wifilog completions zsh)
+```
+
+Then `wifilog s<Tab>` offers `start` / `status` / `stop` / `show-report`, and `wifilog show-report --<Tab>` offers the periods. Typos are caught too: `wifilog veiw` suggests `view`.
+
 ### Screen
 
 Five charts are stacked vertically. They all share the same time axis, so you can compare what happened at the same moment by reading straight down.
