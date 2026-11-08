@@ -11,6 +11,43 @@ macOS only (tested on macOS 26.5, MacBook Pro M4).
 
 ## Install
 
+### From GitHub Releases (Apple Silicon)
+
+Prebuilt binaries are published on the [Releases](https://github.com/pipepasta/wifilog/releases) page.
+
+```sh
+curl -fsSL https://github.com/pipepasta/wifilog/releases/latest/download/wifilog-aarch64-apple-darwin.tar.gz \
+  | tar -xzf - wifilog
+mkdir -p ~/.local/bin && mv wifilog ~/.local/bin/   # any directory on your PATH
+wifilog --version
+```
+
+Or with the GitHub CLI:
+
+```sh
+gh release download --repo pipepasta/wifilog --pattern 'wifilog-aarch64-apple-darwin.tar.gz*'
+shasum -a 256 -c wifilog-aarch64-apple-darwin.tar.gz.sha256   # verify the checksum
+tar -xzf wifilog-aarch64-apple-darwin.tar.gz wifilog
+```
+
+The binary is not signed or notarized. If you download the archive with a web browser, macOS Gatekeeper will refuse to run it; clear the quarantine flag first:
+
+```sh
+xattr -d com.apple.quarantine wifilog
+```
+
+(`curl` and `gh` don't set this flag, so the commands above need no extra step.)
+
+### From source
+
+Requires a recent Rust toolchain (the repository pins Rust 1.97.1 in `mise.toml`). This is also the way to install on Intel Macs, for which no prebuilt binary is provided (wifilog has only been tested on Apple Silicon).
+
+```sh
+cargo install --git https://github.com/pipepasta/wifilog
+```
+
+Or from a local clone:
+
 ```sh
 cargo install --path .
 ```
