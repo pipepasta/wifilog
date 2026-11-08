@@ -1,0 +1,3 @@
+mod record;
+
+fn main() {}
