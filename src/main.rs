@@ -4,6 +4,7 @@ mod lqm;
 mod net;
 mod ping;
 mod record;
+mod series;
 mod store;
 
 use std::path::Path;
