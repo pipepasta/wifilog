@@ -1,0 +1,9 @@
+[tools]
+# Edition 2024 and ratatui 0.30 need a recent toolchain; pin it so builds don't drift
+# with a global `rust = "latest"`.
+rust = { version = "1.97.1", components = "rustfmt,clippy" }
+lefthook = "2.2.2"
+
+[tasks.setup]
+description = "Install the git hooks (pre-commit: rustfmt)"
+run = "lefthook install"

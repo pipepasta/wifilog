@@ -1,0 +1,7 @@
+pre-commit:
+  commands:
+    rustfmt:
+      glob: "*.rs"
+      # Format the staged Rust files and re-stage them, so commits are always formatted.
+      run: rustfmt {staged_files}
+      stage_fixed: true

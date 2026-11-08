@@ -1,0 +1,2 @@
+# Lets plain `rustfmt <file>` (used by the pre-commit hook) format with the same edition as `cargo fmt`.
+edition = "2024"

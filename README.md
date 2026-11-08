@@ -98,3 +98,16 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.pipepasta.wifilog.plis
 ```
 
 If you run `wifilog stop` while it runs under launchd, `KeepAlive` restarts it immediately. Use `launchctl bootout` to stop it.
+
+## Development
+
+The toolchain (Rust 1.97.1 with rustfmt/clippy) and [lefthook](https://github.com/evilmartians/lefthook) are pinned in `mise.toml`.
+
+```sh
+mise install       # install Rust and lefthook
+mise run setup     # install the git hooks
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+The pre-commit hook runs `rustfmt` on the staged `.rs` files and re-stages them, so every commit is formatted.
