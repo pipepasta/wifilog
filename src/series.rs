@@ -80,6 +80,8 @@ pub struct Model {
     /// 最後の LQM の (チャンネル, 帯域幅)
     pub channel: Option<(u32, u32)>,
     pub last_record: Option<DateTime<FixedOffset>>,
+    /// 最後の LQM（電波の値）の時刻
+    pub last_lqm: Option<DateTime<FixedOffset>>,
     /// 最後のネットワークの記号
     current: Option<char>,
 }
@@ -111,12 +113,14 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
     let mut points: HashMap<Metric, Vec<Point>> = HashMap::new();
     let mut pings: HashMap<(Target, char), (u32, u32)> = HashMap::new(); // (総数, タイムアウト)
     let mut channel = None;
+    let mut last_lqm = None;
     for (r, &label) in recs.iter().zip(&labels) {
         let mut push = |m: Metric, y: f64| {
             points.entry(m).or_default().push(Point { t: r.t(), label, y });
         };
         match r {
             Record::Lqm(l) => {
+                last_lqm = Some(l.t);
                 let v = &l.v;
                 push(Metric::Rssi, v.rssi as f64);
                 push(Metric::Noise, v.noise as f64);
@@ -184,6 +188,7 @@ pub fn build(records: &[Record], window: Window, buckets: usize) -> Model {
         latest,
         channel,
         last_record: recs.last().map(|r| r.t()),
+        last_lqm,
         current,
     }
 }

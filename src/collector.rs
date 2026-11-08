@@ -198,28 +198,52 @@ pub enum Event {
 pub struct Stamper {
     /// まだ一度もルーターを確認していなければ `None`。
     router: Option<Option<Router>>,
+    /// 最後にネットワークが変わった時刻と、その前のネットワーク
+    changed: Option<(DateTime<FixedOffset>, Option<String>)>,
 }
 
 impl Stamper {
     pub fn new() -> Stamper {
-        Stamper { router: None }
+        Stamper { router: None, changed: None }
     }
 
     fn net(&self) -> Option<String> {
         self.router.as_ref()?.as_ref()?.mac.clone()
     }
 
+    /// 時刻 `t` の記録が属するネットワーク。LQM はログの時刻なので、届くのがルーターの確認より
+    /// 遅れることがある。切り替えより前の時刻なら前のネットワークとして扱う。
+    fn net_at(&self, t: DateTime<FixedOffset>) -> Option<String> {
+        match &self.changed {
+            Some((at, prev)) if t < *at => prev.clone(),
+            _ => self.net(),
+        }
+    }
+
+    /// IP は同じで MAC だけ取れなかった（arp の一時的な失敗）なら、変化とみなさない。
+    fn is_same_network(&self, router: &Option<Router>) -> bool {
+        let Some(current) = &self.router else { return false };
+        match (current, router) {
+            (Some(cur), Some(new)) => cur.ip == new.ip && (new.mac.is_none() || cur.mac == new.mac),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
     pub fn handle(&mut self, ev: Event) -> Option<Record> {
         match ev {
-            Event::Lqm { t, v } => Some(Record::Lqm(LqmRecord { t, net: self.net(), v })),
+            Event::Lqm { t, v } => Some(Record::Lqm(LqmRecord { t, net: self.net_at(t), v })),
             Event::Ping { t, dst, ms } => {
-                Some(Record::Ping(PingRecord { t, net: self.net(), dst, ms }))
+                Some(Record::Ping(PingRecord { t, net: self.net_at(t), dst, ms }))
             }
             Event::Router { t, router } => {
-                if self.router.as_ref() == Some(&router) {
+                if self.is_same_network(&router) {
                     return None;
                 }
                 let router_ip = router.as_ref().map(|r| r.ip.clone());
+                if self.router.is_some() {
+                    self.changed = Some((t, self.net()));
+                }
                 self.router = Some(router);
                 Some(Record::Net(NetRecord { t, net: self.net(), router_ip }))
             }
@@ -309,5 +333,33 @@ mod tests {
             panic!("lqm expected")
         };
         assert_eq!(l.net, None);
+    }
+
+    #[test]
+    fn late_lqm_keeps_previous_network() {
+        // log の時刻はメインスレッドに届くより前なので、切り替え直後に届いた古い LQM は前のネットワークのもの
+        let mut s = Stamper::new();
+        s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") });
+        s.handle(Event::Router { t: ts(30), router: router("bb:bb:bb:bb:bb:bb") });
+        let Some(Record::Lqm(old)) = s.handle(Event::Lqm { t: ts(28), v: values() }) else {
+            panic!("lqm expected")
+        };
+        assert_eq!(old.net.as_deref(), Some("aa:aa:aa:aa:aa:aa"));
+        let Some(Record::Lqm(new)) = s.handle(Event::Lqm { t: ts(33), v: values() }) else {
+            panic!("lqm expected")
+        };
+        assert_eq!(new.net.as_deref(), Some("bb:bb:bb:bb:bb:bb"));
+    }
+
+    #[test]
+    fn arp_failure_with_same_ip_keeps_network() {
+        let mut s = Stamper::new();
+        s.handle(Event::Router { t: ts(0), router: router("aa:aa:aa:aa:aa:aa") });
+        let no_mac = Some(Router { ip: "192.168.11.1".into(), mac: None });
+        assert_eq!(s.handle(Event::Router { t: ts(30), router: no_mac }), None);
+        let Some(Record::Lqm(l)) = s.handle(Event::Lqm { t: ts(35), v: values() }) else {
+            panic!("lqm expected")
+        };
+        assert_eq!(l.net.as_deref(), Some("aa:aa:aa:aa:aa:aa"));
     }
 }

@@ -37,6 +37,16 @@ fn with_terminal(f: impl FnOnce(&mut DefaultTerminal) -> Result<()>) -> Result<(
     result
 }
 
+/// メモリに残す記録の下限の時刻。
+fn retain_cutoff(
+    now: DateTime<FixedOffset>,
+    paused_at: Option<DateTime<FixedOffset>>,
+    keep: Duration,
+) -> DateTime<FixedOffset> {
+    // 一時停止中は止めた時刻を基準にする（止めて見ているグラフが削られないように）
+    paused_at.unwrap_or(now) - keep - Duration::minutes(1)
+}
+
 pub fn run_view(dir: &Path, internet: &str) -> Result<()> {
     if daemon::status(dir)? == Status::Stopped {
         daemon::start(dir, internet)?;
@@ -51,7 +61,7 @@ pub fn run_view(dir: &Path, internet: &str) -> Result<()> {
     with_terminal(|terminal| {
         loop {
             records.extend(tail.poll()?);
-            let cutoff = now() - keep - Duration::minutes(1);
+            let cutoff = retain_cutoff(now(), paused_at, keep);
             records.retain(|r| r.t() >= cutoff);
 
             let (minutes, span_label) = SPANS[span];
@@ -110,4 +120,23 @@ pub fn run_report(dir: &Path, span: Duration, label: &'static str) -> Result<()>
                 }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retention_follows_the_paused_time() {
+        let now = DateTime::parse_from_rfc3339("2026-11-08T12:00:00+09:00").unwrap();
+        let paused_at = now - Duration::minutes(30);
+        assert_eq!(
+            retain_cutoff(now, Some(paused_at), Duration::hours(1)),
+            paused_at - Duration::hours(1) - Duration::minutes(1)
+        );
+        assert_eq!(
+            retain_cutoff(now, None, Duration::hours(1)),
+            now - Duration::hours(1) - Duration::minutes(1)
+        );
+    }
 }
